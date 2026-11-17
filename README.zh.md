@@ -34,7 +34,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-如需安装 GitHub Release 包，可使用 `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.2/lornatang-dsh-security-audit-0.1.2.tgz`。
+如需安装 GitHub Release 包，可使用 `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.3/lornatang-dsh-security-audit-0.1.3.tgz`。
 
 `add` 命令将 bundle 组合进 profile。`package.json` 通过 `dsh.bundle.patch` 声明 `cordis.patch.yml`；该 patch 插入 `security-audit` 行并加载宿主入口。添加或移除后重启 DSH，让 profile 重新组合。需要 Node.js 22.19 或更高版本，以及提供兼容 `skills` 服务的 profile。
 
@@ -160,7 +160,9 @@ bundle 在 `package.json` 中声明一个宿主入口，通过 `cordis.patch.yml
 <details>
 <summary>维护者工作上下文 — 点击展开</summary>
 
-`npm run build` 清理 `lib`，并用 TypeScript 编译宿主入口与声明文件。`lib` 已提交，CI 运行 `git diff --exit-code -- lib`，因此修改源码后需要重新构建并提交。`npm run typecheck` 只检查、不产出文件。`npm test` 先构建，再运行注册表、校验器和平台测试；`prepack` 会运行测试套件。`npm run test:dsh` 打包 bundle、安装到隔离 profile、运行安装后的两个校验器并启动 DSH。可用 `DSH_TEST_EXECUTABLE` 和桌面宿主的 `DSH_TEST_ENTRY` 指定可执行入口。
+`npm run build` 清理 `lib`，并用 TypeScript 编译宿主入口与声明文件。`lib` 已提交，CI 运行 `git diff --exit-code -- lib`，因此修改源码后需要重新构建并提交。`npm run typecheck` 只检查、不产出文件。`npm test` 先构建，再运行注册表、校验器和平台测试；`prepack` 会运行测试套件。`npm run test:dsh` 打包 bundle、安装到隔离 profile、运行安装后的两个校验器并启动 DSH。在 Windows 上，它会根据 `PATH` 中的 `dsh.cmd` 找到桌面宿主。可用 `DSH_TEST_EXECUTABLE` 和桌面宿主的 `DSH_TEST_ENTRY` 指定其他可执行入口。
+
+`node scripts/benchmark-validation.mjs` 测量发现校验命令处理 1,000 条记录的时间，以及 Windows 上有大小限制的 4 MiB 文件读取时间。可传入另一个工作副本的 `skills/security-audit` 目录，在同一台机器上对比实现。
 
 需要 Node.js 22.19 或更高版本。软件包将 `skills` 服务与 Cordis 声明为 peer，使用 `yaml` 读取 frontmatter，并将各平台的 Windows 原生绑定作为可选依赖。软件包不限制 DSH 版本号。
 

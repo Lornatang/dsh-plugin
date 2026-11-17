@@ -34,7 +34,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-To install the GitHub release tarball instead, use `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.2/lornatang-dsh-security-audit-0.1.2.tgz`.
+To install the GitHub release tarball instead, use `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.3/lornatang-dsh-security-audit-0.1.3.tgz`.
 
 The `add` command composes the bundle into the profile. `package.json` declares `cordis.patch.yml` through `dsh.bundle.patch`; the patch inserts the `security-audit` row and loads the host entry. Restart DSH after `add` or `remove` so the profile is composed again. Node.js 22.19 or newer and a profile with a compatible `skills` service are required.
 
@@ -160,7 +160,9 @@ These limits describe what the skill needs from the profile and what its validat
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-`npm run build` cleans `lib` and compiles the host entry and declarations with TypeScript. `lib` is committed and CI runs `git diff --exit-code -- lib`, so rebuild and commit it with source changes. `npm run typecheck` checks without emitting. `npm test` builds first, then runs the registry, validator, and platform tests; `prepack` runs that suite. `npm run test:dsh` packs the bundle, installs it into an isolated profile, runs both installed validators, and boots DSH. Set `DSH_TEST_EXECUTABLE` and, for the desktop host, `DSH_TEST_ENTRY` to select the executable.
+`npm run build` cleans `lib` and compiles the host entry and declarations with TypeScript. `lib` is committed and CI runs `git diff --exit-code -- lib`, so rebuild and commit it with source changes. `npm run typecheck` checks without emitting. `npm test` builds first, then runs the registry, validator, and platform tests; `prepack` runs that suite. `npm run test:dsh` packs the bundle, installs it into an isolated profile, runs both installed validators, and boots DSH. On Windows it detects the desktop host from `dsh.cmd` on `PATH`. Set `DSH_TEST_EXECUTABLE` and, for the desktop host, `DSH_TEST_ENTRY` to select a different executable.
+
+`node scripts/benchmark-validation.mjs` measures the findings CLI with 1,000 records and, on Windows, a bounded 4 MiB read. Pass another checkout's `skills/security-audit` directory to compare implementations on the same machine.
 
 Node.js 22.19 or newer is required. The package declares the `skills` service and Cordis as peers, uses `yaml` to read frontmatter, and ships platform-specific Windows native bindings as optional dependencies. The package declares no DSH version constraint.
 

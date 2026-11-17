@@ -110,7 +110,7 @@ function readFileWithinLimit(file, limit) {
       if (bytes === 0) break
       total += bytes
       if (total > limit) fail(`input exceeds ${limit} byte limit`)
-      chunks.push(Buffer.from(buffer.subarray(0, bytes)))
+      chunks.push(buffer.subarray(0, bytes))
     }
     try {
       return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks, total))

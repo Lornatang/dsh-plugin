@@ -273,6 +273,110 @@ test("oneOf requires exactly one passing branch", () => {
     .some((error) => error.includes("matched 0")));
 });
 
+test("oneOf preserves branch diagnostics and overlapping schema semantics", () => {
+  const branch = (kind) => ({
+    type: "object",
+    properties: { kind: { const: kind }, value: { type: "string" } },
+    required: ["kind", "value"],
+  });
+  const choices = { oneOf: [branch("a"), branch("b")] };
+
+  assert.deepEqual(collect({ kind: "a", value: "ok" }, choices), []);
+  assert.deepEqual(collect({ kind: "a", value: 7 }, choices), [
+    "$data: must match exactly one schema in oneOf; matched 0",
+    "$data.value: expected string, got number",
+  ]);
+  assert.deepEqual(collect({ kind: "unknown", value: "ok" }, choices), [
+    "$data: must match exactly one schema in oneOf; matched 0",
+  ]);
+  assert.deepEqual(collect({ value: "ok" }, choices), [
+    "$data: must match exactly one schema in oneOf; matched 0",
+  ]);
+  assert.deepEqual(collect({ kind: "a", value: "ok" }, { oneOf: [branch("a"), branch("a")] }), [
+    "$data: must match exactly one schema in oneOf; matched 2",
+  ]);
+  assert.deepEqual(collect({ kind: "a", value: "ok" }, { oneOf: [branch("a"), { type: "object" }] }), [
+    "$data: must match exactly one schema in oneOf; matched 2",
+  ]);
+
+  const nonEnumerable = Object.defineProperty({}, "kind", { value: "other", enumerable: false });
+  const optionalBranches = { oneOf: [
+    { type: "object", properties: { kind: { const: "a" } } },
+    { type: "object", properties: { kind: { const: "b" } } },
+  ] };
+  assert.deepEqual(collect(nonEnumerable, optionalBranches), [
+    "$data: must match exactly one schema in oneOf; matched 2",
+  ]);
+
+  const proxied = new Proxy({ kind: "b", value: "ok" }, {
+    get(target, key, receiver) {
+      return key === "kind" ? "a" : Reflect.get(target, key, receiver);
+    },
+  });
+  assert.deepEqual(collect(proxied, choices), []);
+});
+
+test("CLI and direct validation agree on branch results and diagnostics", () => {
+  const unknown = confirmed();
+  unknown.verdict = "unknown";
+  const missingVerdict = confirmed();
+  delete missingVerdict.verdict;
+  const invalidConfirmed = confirmed();
+  invalidConfirmed.title = "";
+  const changedVerdict = confirmed();
+  changedVerdict.verdict = "rejected";
+
+  for (const records of [[confirmed()], [needsValidation()], [rejected()],
+    [unknown], [missingVerdict], [invalidConfirmed], [changedVerdict]]) {
+    const expected = errorsFor(records);
+    const result = runCli(JSON.stringify(records));
+    assert.equal(result.status, expected.length ? 1 : 0, result.stderr);
+    const actual = result.stderr.split(/\r?\n/u)
+      .filter((line) => line.startsWith("ERROR: "))
+      .map((line) => line.slice("ERROR: ".length));
+    assert.deepEqual(actual, expected);
+  }
+});
+
+test("CLI preserves generic oneOf results for custom JSON schemas", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "validate-schema-"));
+  const cli = path.join(directory, "validate-findings.cjs");
+  const input = path.join(directory, "findings.json");
+  const branch = (kind) => ({
+    type: "object",
+    properties: { kind: { const: kind }, value: { type: "string" } },
+    required: ["kind", "value"],
+  });
+  const cases = [
+    { branches: [branch("a"), branch("b")], item: { kind: "a", value: 7 } },
+    { branches: [branch("a"), branch("b")], item: { kind: "other", value: "ok" } },
+    { branches: [branch("a"), branch("b")], item: { value: "ok" } },
+    { branches: [branch("a"), branch("a")], item: { kind: "a", value: "ok" } },
+    { branches: [branch("a"), { type: "object" }], item: { kind: "a", value: "ok" } },
+    { branches: [{ properties: { kind: { const: "a" } } }, { properties: { kind: { const: "b" } } }], item: {} },
+  ];
+  try {
+    fs.copyFileSync(validatorPath, cli);
+    fs.copyFileSync(path.join(__dirname, "windows-safe-input.cjs"), path.join(directory, "windows-safe-input.cjs"));
+    for (const { branches, item } of cases) {
+      const customSchema = { type: "array", items: { oneOf: branches } };
+      const records = [item];
+      fs.writeFileSync(path.join(directory, "report-schema.json"), JSON.stringify(customSchema));
+      fs.writeFileSync(input, JSON.stringify(records));
+      const env = { ...process.env, NODE_PATH: [path.resolve(__dirname, "../../node_modules"), process.env.NODE_PATH].filter(Boolean).join(path.delimiter) };
+      const result = spawnSync(process.execPath, [cli, input], { encoding: "utf8", timeout: CLI_TIMEOUT_MS, env });
+      const expected = validateDocument(records, customSchema);
+      assert.equal(result.status, expected.length ? 1 : 0, result.stderr);
+      assert.deepEqual(result.stderr.split(/\r?\n/u).filter((line) => line.startsWith("ERROR: "))
+        .map((line) => line.slice("ERROR: ".length)), expected);
+    }
+  } finally {
+    assert.equal(path.dirname(path.resolve(directory)), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(directory).startsWith("validate-schema-"));
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("rejects duplicate fingerprints and unique array entries", () => {
   const first = confirmed();
   const second = rejected();

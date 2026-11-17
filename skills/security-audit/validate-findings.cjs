@@ -53,6 +53,7 @@ const WINDOWS_RESERVED_COMPONENT = /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const UNSAFE_DIAGNOSTIC_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu;
 const MAX_DIAGNOSTIC_STRING_LENGTH = 256;
+const PARSED_JSON = Symbol("parsed JSON");
 
 class JsonStructureError extends Error {}
 class SafeInputError extends Error {}
@@ -358,12 +359,21 @@ function findDiscriminator(schema) {
   return null;
 }
 
-function validate(value, schema, p, errors) {
+function branchCannotMatch(value, branch) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const discriminator = findDiscriminator(branch);
+  return Boolean(discriminator && typeof discriminator.value === "string" &&
+    hasOwn(value, discriminator.key) && typeof value[discriminator.key] === "string" &&
+    value[discriminator.key] !== discriminator.value);
+}
+
+function validate(value, schema, p, errors, parsedJson = false) {
   if (errors.length >= LIMITS.validationErrors) return;
   if (hasOwn(schema, "oneOf")) {
-    const results = schema.oneOf.map((branch) => collectUnchecked(value, branch, p));
+    const results = schema.oneOf.map((branch) =>
+      parsedJson && branchCannotMatch(value, branch) ? null : collectUnchecked(value, branch, p, parsedJson));
     const passingIndexes = results
-      .map((branchErrors, index) => branchErrors.length === 0 ? index : -1)
+      .map((branchErrors, index) => branchErrors && branchErrors.length === 0 ? index : -1)
       .filter((index) => index !== -1);
 
     if (passingIndexes.length !== 1) {
@@ -373,7 +383,8 @@ function validate(value, schema, p, errors) {
           .map((branch, index) => ({ discriminator: findDiscriminator(branch), index }))
           .filter(({ discriminator }) => discriminator && hasOwn(value, discriminator.key) && deepEqual(value[discriminator.key], discriminator.value));
         if (matchingDiscriminators.length === 1) {
-          errors.push(...results[matchingDiscriminators[0].index]);
+          const index = matchingDiscriminators[0].index;
+          errors.push(...(results[index] ?? collectUnchecked(value, schema.oneOf[index], p, parsedJson)));
         }
       }
     }
@@ -398,7 +409,7 @@ function validate(value, schema, p, errors) {
     }
     for (const key of Object.keys(value)) {
       if (hasOwn(schema, "properties") && hasOwn(schema.properties, key)) {
-        validate(value[key], schema.properties[key], propertyPath(p, key), errors);
+        validate(value[key], schema.properties[key], propertyPath(p, key), errors, parsedJson);
       } else if (hasOwn(schema, "additionalProperties") && schema.additionalProperties === false) {
         errors.push(`${p}: unexpected field ${safeQuote(key)}`);
       }
@@ -433,7 +444,7 @@ function validate(value, schema, p, errors) {
       }
     }
     if (hasOwn(schema, "items")) {
-      value.forEach((item, index) => validate(item, schema.items, `${p}[${index}]`, errors));
+      value.forEach((item, index) => validate(item, schema.items, `${p}[${index}]`, errors, parsedJson));
     }
   }
 
@@ -458,9 +469,9 @@ function validate(value, schema, p, errors) {
   }
 }
 
-function collectUnchecked(value, schema, p) {
+function collectUnchecked(value, schema, p, parsedJson = false) {
   const errors = createErrorList();
-  validate(value, schema, p, errors);
+  validate(value, schema, p, errors, parsedJson);
   return errors;
 }
 
@@ -582,12 +593,12 @@ function collectFindingSemanticErrors(findings) {
   return errors;
 }
 
-function validateDocument(findings, schema) {
+function validateDocument(findings, schema, source) {
   const schemaErrors = collectSchemaErrors(schema);
   if (schemaErrors.length > 0) return schemaErrors;
   const limitErrors = collectDataLimitErrors(findings, "$");
   if (limitErrors.length > 0) return limitErrors;
-  const errors = collectUnchecked(findings, schema, "$");
+  const errors = collectUnchecked(findings, schema, "$", source === PARSED_JSON);
   if (errors.length < LIMITS.validationErrors) {
     errors.push(...collectFindingSemanticErrors(findings));
   }
@@ -749,7 +760,8 @@ function run(file) {
 
   let errors;
   try {
-    errors = validateDocument(findings, schema);
+    // Both the report and schema were parsed from JSON, so their properties cannot be accessors or proxies.
+    errors = validateDocument(findings, schema, PARSED_JSON);
   } catch {
     console.error("Failed to validate findings JSON: unexpected validation error");
     return 1;

@@ -6,14 +6,17 @@ import { dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { findDesktopHost } from './find-dsh.mjs'
 
 const run = promisify(execFile)
 const root = fileURLToPath(new URL('..', import.meta.url))
 const temp = await mkdtemp(join(tmpdir(), 'dsh-security-audit-install-'))
-const executable = process.env.DSH_TEST_EXECUTABLE || 'dsh'
-const prefix = process.env.DSH_TEST_ENTRY ? ['--expose-internals', process.env.DSH_TEST_ENTRY] : []
+const desktop = findDesktopHost()
+const executable = process.env.DSH_TEST_EXECUTABLE || desktop?.executable || 'dsh'
+const entry = process.env.DSH_TEST_ENTRY || desktop?.entry
+const prefix = entry ? ['--expose-internals', entry] : []
 const env = { ...process.env, DSH_HOME: join(temp, 'dsh-home') }
-if (process.env.DSH_TEST_ENTRY) env.ELECTRON_RUN_AS_NODE = '1'
+if (entry) env.ELECTRON_RUN_AS_NODE = '1'
 delete env.DSH_PROFILE
 const dsh = args => run(executable, [...prefix, ...args], { env, cwd: temp, timeout: 240000, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
 const npmCli = process.env.npm_execpath || (process.platform === 'win32'

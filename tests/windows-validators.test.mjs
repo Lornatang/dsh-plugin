@@ -39,6 +39,16 @@ function invoke(script, file, extra = []) {
   return result
 }
 
+test('Windows bounded reads preserve multi-chunk UTF-8 and the exact byte limit', { skip: process.platform !== 'win32' }, async () => {
+  const { readFileWithinLimit } = createRequire(import.meta.url)('../skills/security-audit/windows-safe-input.cjs')
+  const file = join(root, 'multi-chunk-utf8.json')
+  const contents = `${'a'.repeat(65535)}€${'b'.repeat(65536)}`
+  const bytes = Buffer.byteLength(contents)
+  await writeFile(file, contents)
+  assert.equal(readFileWithinLimit(file, bytes), contents)
+  assert.throws(() => readFileWithinLimit(file, bytes - 1), /input exceeds .* byte limit/u)
+})
+
 for (const script of ['validate-findings.cjs', 'validate-coverage-ledger.cjs']) {
   test(`${script} accepts an ordinary valid JSON file`, async () => {
     const file = join(root, `${script}.json`)
