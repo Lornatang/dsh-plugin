@@ -51,7 +51,7 @@ In a full audit the workflow covers reconnaissance, coverage-led hunting, candid
 
 `cordis.patch.yml` installs the host entry. The entry registers a provider with the `skills` service; the provider reads the skill's metadata and body and points DSH at the skill directory for relative resources. It introduces no audit tools, user interface, background service, or sandbox. DSH's ordinary precedence rules apply if another provider offers a skill with the same name.
 
-The validators accept UTF-8 JSON files up to 5 MiB. On Windows they use native file handles to inspect local paths, reject reparse points, device paths, and network paths, and limit the number of bytes read. If the native binding is unavailable, they fail closed. On systems with `O_NOFOLLOW` and `O_NONBLOCK`, the validators use those flags to open the input.
+The validators accept UTF-8 JSON files up to 5 MiB. On Windows they use native file handles to inspect local paths, reject reparse points, device paths, network paths, and substituted drives, and limit the number of bytes read. If the native binding is unavailable, they fail closed. On systems with `O_NOFOLLOW` and `O_NONBLOCK`, the validators use those flags to open the input.
 
 ## Further Exploration
 
@@ -65,7 +65,7 @@ The skill is discoverable by the model and can also be invoked explicitly by the
 ## Known Limitations and Deferred Work
 
 - Full audits require parallel subagents and an OS-enforced sandbox meeting the controls in the skill. The package does not provide either capability; if the controls are unavailable, target-controlled code must not be executed and affected leads remain `needs_validation`.
-- The Windows validator reader accepts local drives and rejects network paths, device names, and reparse points, including reparse-point parent directories. It requires the packaged native binding for the host architecture.
+- The Windows validator reader accepts direct local volume paths and rejects substituted drives, network paths, device names, and reparse points, including reparse-point parent directories. It requires the packaged native binding for the host architecture.
 
 ## Dev Note
 

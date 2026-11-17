@@ -3,7 +3,7 @@
 ## 0.1.1
 
 - Run the findings and coverage-ledger validators on native Windows with bounded, handle-based input reads.
-- Reject Windows device, network, and reparse-point paths and fail closed when native support is unavailable.
+- Reject Windows device, network, substituted-drive, and reparse-point paths and fail closed when native support is unavailable.
 - Organize the skill and its resources under `skills/security-audit/`.
 
 ## 0.1.0
