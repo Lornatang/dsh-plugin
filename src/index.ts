@@ -8,7 +8,7 @@ export const name = 'security-audit'
 export const inject = ['skills']
 
 export function apply(ctx: Context): void {
-  const root = fileURLToPath(new URL('../upstream/skills/', import.meta.url))
+  const root = fileURLToPath(new URL('../skills/', import.meta.url))
   ctx.skills.registerProvider(control => createSkillProvider(root, control))
 }
 

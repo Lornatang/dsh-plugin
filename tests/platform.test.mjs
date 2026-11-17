@@ -7,8 +7,8 @@ import test from 'node:test'
 const safeOpen = Number.isInteger(constants.O_NOFOLLOW) && constants.O_NOFOLLOW !== 0 &&
   Number.isInteger(constants.O_NONBLOCK) && constants.O_NONBLOCK !== 0
 
-test('upstream validators fail closed when safe file opening is unavailable', { skip: safeOpen }, () => {
-  const directory = new URL('../upstream/skills/security-audit/', import.meta.url)
+test('validators fail closed on unsupported platforms', { skip: safeOpen || process.platform === 'win32' }, () => {
+  const directory = new URL('../skills/security-audit/', import.meta.url)
   for (const script of ['validate-findings.cjs', 'validate-coverage-ledger.cjs']) {
     const result = spawnSync(process.execPath, [fileURLToPath(new URL(script, directory)), fileURLToPath(new URL('report-schema.json', directory))], { encoding: 'utf8' })
     assert.equal(result.status, 1, script)

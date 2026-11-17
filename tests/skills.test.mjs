@@ -7,7 +7,7 @@ import test from 'node:test'
 import { Context } from '@deepseek-ai/cordis'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 
-const skillDir = fileURLToPath(new URL('../upstream/skills/security-audit/', import.meta.url))
+const skillDir = fileURLToPath(new URL('../skills/security-audit/', import.meta.url))
 
 async function pluginModule() {
   try { return await import('../lib/index.js') } catch (error) {

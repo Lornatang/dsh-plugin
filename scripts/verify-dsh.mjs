@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile, spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -35,8 +35,14 @@ try {
   const installedRoot = join(profile, 'node_modules', '@lornatang', 'dsh-security-audit')
   const installed = JSON.parse(await readFile(join(installedRoot, 'package.json'), 'utf8'))
   assert.equal(installed.name, '@lornatang/dsh-security-audit')
-  const original = await readFile(join(root, 'upstream', 'skills', 'security-audit', 'SKILL.md'))
-  assert.deepEqual(await readFile(join(installedRoot, 'upstream', 'skills', 'security-audit', 'SKILL.md')), original)
+  const original = await readFile(join(root, 'skills', 'security-audit', 'SKILL.md'))
+  assert.deepEqual(await readFile(join(installedRoot, 'skills', 'security-audit', 'SKILL.md')), original)
+  const input = join(temp, 'input.json')
+  await writeFile(input, '[]')
+  for (const script of ['validate-findings.cjs', 'validate-coverage-ledger.cjs']) {
+    const result = await run(process.execPath, [join(installedRoot, 'skills', 'security-audit', script), input], { env, cwd: temp, timeout: 30000 })
+    assert.match(result.stdout, /PASS:/u, `${script} did not validate an installed input`)
+  }
   const composed = (await dsh(['--profile', 'security-audit-test', '--dump-config'])).stdout
   assert.ok(composed.includes('@lornatang/dsh-security-audit'), 'bundle was not composed into the profile')
   server = spawn(executable, [...prefix, '--profile', 'security-audit-test', '--no-open', '--port', '0'], {

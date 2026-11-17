@@ -602,6 +602,14 @@ function loadSchema(schemaPath) {
 }
 
 function readFileWithinLimit(file) {
+  if (process.platform === "win32") {
+    try {
+      return require("./windows-safe-input.cjs").readFileWithinLimit(file, LIMITS.inputBytes);
+    } catch (error) {
+      if (error && error.code === "DSH_SAFE_INPUT") throw new SafeInputError(error.message);
+      throw error;
+    }
+  }
   const noFollow = fs.constants.O_NOFOLLOW;
   const nonBlock = fs.constants.O_NONBLOCK;
   if (!Number.isInteger(noFollow) || noFollow === 0 || !Number.isInteger(nonBlock) || nonBlock === 0) {

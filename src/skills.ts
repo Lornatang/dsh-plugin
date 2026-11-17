@@ -24,7 +24,7 @@ function isMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
 }
 
-/** Expose the unmodified upstream skill and its companion files to DSH. */
+/** Expose the security-audit skill and its companion files to DSH. */
 export function createSkillProvider(root: string, control?: SkillProviderControl): SkillProvider {
   if (!isAbsolute(root)) throw new Error('dsh-security-audit: skill root must be absolute')
   const directory = join(root, NAME)

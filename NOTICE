@@ -1,10 +1,2 @@
 dsh-security-audit
 Copyright 2026 Lornatang and contributors
-
-This independent integration includes an unmodified snapshot of
-cloudflare/security-audit-skill, Copyright 2025-2026 Cloudflare, Inc.
-The snapshot is pinned to commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8.
-The original MIT license and copyright notice are preserved in upstream/LICENSE.
-https://github.com/cloudflare/security-audit-skill
-
-This project is not endorsed by or affiliated with Cloudflare, Inc.
