@@ -32,7 +32,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-Restart DSH after adding or removing the package. The bundle inserts a `security-audit` row into the profile and registers the skill with the host's skill registry. It requires Node.js 22.19 or later and DSH 0.2.2-rc.3 or a compatible later release with the `skills` service.
+Restart DSH after adding or removing the package. The bundle inserts a `security-audit` row into the profile and registers the skill with the host's skill registry. It requires Node.js 22.19 or later and a DSH profile with the compatible `skills` service.
 
 Open a session on the codebase you want to review. Ask a focused security question, request a full audit, or invoke `/security-audit` explicitly. The original skill distinguishes guidance for focused questions from its full workflow, which is used for explicit audits, penetration tests, comprehensive reviews, or requested report artifacts.
 

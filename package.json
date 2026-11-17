@@ -6,7 +6,7 @@
   "license": "MIT",
   "author": "Lornatang",
   "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "security", "security-audit", "skills"],
-  "engines": { "node": ">=22.19", "dsh": ">=0.2.2-rc.3" },
+  "engines": { "node": ">=22.19", "dsh": "*" },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {

@@ -32,7 +32,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-添加或移除后重启 DSH。软件包会在配置中插入 `security-audit` 条目，并将技能注册到宿主的技能注册表。需要 Node.js 22.19 或更高版本，以及提供 `skills` 服务的 DSH 0.2.2-rc.3 或兼容的后续版本。
+添加或移除后重启 DSH。软件包会在配置中插入 `security-audit` 条目，并将技能注册到宿主的技能注册表。需要 Node.js 22.19 或更高版本，以及提供兼容 `skills` 服务的 DSH 配置。
 
 在待审计代码库中开启会话，提出具体安全问题、请求完整审计，或显式调用 `/security-audit`。原版技能区分面向具体问题的指导模式与完整审计模式；明确要求代码审计、渗透测试、全面审查或报告产物时才使用完整流程。
 
