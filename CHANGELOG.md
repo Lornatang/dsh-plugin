@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Align the English and Chinese READMEs with the package documentation structure, including configuration, troubleshooting, implementation, and model experience.
+
 ## 0.1.1
 
 - Run the findings and coverage-ledger validators on native Windows with bounded, handle-based input reads.
