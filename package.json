@@ -1,0 +1,40 @@
+{
+  "name": "@lornatang/dsh-security-audit",
+  "version": "0.1.0",
+  "description": "Cloudflare's security-audit skill for DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Lornatang",
+  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "security", "security-audit", "skills"],
+  "engines": { "node": ">=22.19", "dsh": ">=0.2.2-rc.3" },
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "upstream", "upstream.lock.json", "cordis.patch.yml", "README.md", "README.zh.md", "CHANGELOG.md", "LICENSE", "NOTICE"],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify:upstream": "node scripts/verify-upstream.mjs",
+    "test": "npm run build && npm run verify:upstream && node scripts/run-tests.mjs",
+    "test:dsh": "node scripts/verify-dsh.mjs",
+    "prepack": "npm test"
+  },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": { "yaml": "^2.8.1" },
+  "peerDependencies": { "@deepseek-ai/cordis": "~4.1.0", "@deepseek-ai/dsh-skill": ">=0.2.2-rc.3 <0.2.2 || >=0.2.2 <0.3.0" },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-skill": "0.2.2-rc.3",
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/Lornatang/dsh-security-audit.git" },
+  "homepage": "https://github.com/Lornatang/dsh-security-audit#readme",
+  "bugs": { "url": "https://github.com/Lornatang/dsh-security-audit/issues" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }
+}
