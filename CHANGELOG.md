@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Stop exporting two validator helpers that only their own modules use; validator behavior and the published skill layout are unchanged.
+
 ## 0.1.4
 
 - Load the report schema through the bounded, symlink-guarded reader and report a constant parse error, so a malformed schema cannot echo parser text or bypass the input limits.

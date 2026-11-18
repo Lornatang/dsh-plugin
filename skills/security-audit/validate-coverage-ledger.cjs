@@ -878,7 +878,6 @@ module.exports = {
   isSafeRelativePath,
   preflightJsonText,
   readFileWithinLimit,
-  safeQuote,
   validateDocument,
 };
 

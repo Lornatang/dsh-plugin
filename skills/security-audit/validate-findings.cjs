@@ -796,7 +796,6 @@ module.exports = {
   VISIBLE_CONTENT,
   WINDOWS_RESERVED_COMPONENT,
   collect,
-  collectFindingSemanticErrors,
   collectSchemaErrors,
   hasVisibleProse,
   isSafeRelativeSourcePath,

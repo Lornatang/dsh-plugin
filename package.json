@@ -1,6 +1,6 @@
 {
   "name": "@lornatang/dsh-security-audit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Security audit skill for DeepSeek Harness.",
   "type": "module",
   "license": "MIT",
