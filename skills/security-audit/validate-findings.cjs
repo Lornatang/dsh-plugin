@@ -92,12 +92,17 @@ function propertyPath(base, key) {
 
 function createErrorList() {
   const errors = [];
+  Object.defineProperty(errors, "truncated", { value: false, writable: true, enumerable: false });
   Object.defineProperty(errors, "push", {
     value(...messages) {
       const remaining = LIMITS.validationErrors - this.length;
       if (remaining > 0) {
         Array.prototype.push.apply(this, messages.slice(0, remaining).map(escapeUnsafeDiagnosticCharacters));
       }
+      if (messages.length > remaining) this.truncated = true;
+      // Reaching the cap also means the visible list is saturated: callers stop
+      // producing errors once the budget is exhausted.
+      if (this.length >= LIMITS.validationErrors) this.truncated = true;
       return this.length;
     },
   });
@@ -606,7 +611,15 @@ function validateDocument(findings, schema, source) {
 }
 
 function loadSchema(schemaPath) {
-  const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+  let contents;
+  let schema;
+  try {
+    contents = readFileWithinLimit(schemaPath);
+    schema = JSON.parse(contents);
+  } catch (error) {
+    if (error instanceof SafeInputError) throw error;
+    throw new Error("report-schema.json is unreadable or not valid JSON");
+  }
   const errors = collectSchemaErrors(schema);
   if (errors.length > 0) throw new Error(`unsupported or invalid report schema:\n${errors.join("\n")}`);
   return schema;
@@ -768,7 +781,7 @@ function run(file) {
   }
   for (const message of errors) console.error("ERROR:", escapeUnsafeDiagnosticCharacters(message));
   if (errors.length > 0) {
-    const cap = errors.length === LIMITS.validationErrors ? `; output capped at ${LIMITS.validationErrors}` : "";
+    const cap = errors.truncated === true ? `; output capped at ${LIMITS.validationErrors}` : "";
     console.error(`FAIL: ${errors.length} validation error(s)${cap}`);
     return 1;
   }

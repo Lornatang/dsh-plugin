@@ -34,7 +34,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-如需安装 GitHub Release 包，可使用 `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.3/lornatang-dsh-security-audit-0.1.3.tgz`。
+如需安装 GitHub Release 包，可使用 `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.4/lornatang-dsh-security-audit-0.1.4.tgz`。
 
 `add` 命令将 bundle 组合进 profile。`package.json` 通过 `dsh.bundle.patch` 声明 `cordis.patch.yml`；该 patch 插入 `security-audit` 行并加载宿主入口。添加或移除后重启 DSH，让 profile 重新组合。需要 Node.js 22.19 或更高版本，以及提供兼容 `skills` 服务的 profile。
 
@@ -102,7 +102,7 @@ bundle 在 `package.json` 中声明一个宿主入口，通过 `cordis.patch.yml
 
 `createSkillProvider` 从技能 frontmatter 读取名称与描述，提供一个 source 为 `bundled`、provider 为 `dsh-security-audit`、rank 为 600 的候选项，同时允许模型和用户调用。加载候选项时读取正文，并把技能目录作为相对文件的资源根路径。文件缺失会使发现结果不完整；若文件在发现后消失，提供方会使目录缓存失效并返回无定义。释放插件时会注销提供方。
 
-两个 CLI 校验器检查 JSON 结构及安全审计相关不变量。POSIX 系统的输入读取器使用 `O_NOFOLLOW`、`O_NONBLOCK`、普通文件检查和有界读取。Windows 读取器先确认直接映射到本地卷，再固定目录与文件句柄，拒绝重解析点和非磁盘输入，并执行相同的字节上限与 UTF-8 解码。原生绑定或安全路径检查不可用时会安全拒绝输入。
+两个 CLI 校验器检查 JSON 结构及安全审计相关不变量。POSIX 系统的输入读取器使用 `O_NOFOLLOW`、`O_NONBLOCK`、普通文件检查和有界读取；no-follow 仅约束路径末段，父目录不受约束。Windows 读取器先确认直接映射到本地卷，再固定目录与文件句柄，拒绝重解析点和非磁盘输入，并执行相同的字节上限与 UTF-8 解码。原生绑定或安全路径检查不可用时会安全拒绝输入。
 
 | 源文件 | 内容 |
 |---|---|

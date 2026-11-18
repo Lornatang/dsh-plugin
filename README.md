@@ -34,7 +34,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-To install the GitHub release tarball instead, use `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.3/lornatang-dsh-security-audit-0.1.3.tgz`.
+To install the GitHub release tarball instead, use `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.4/lornatang-dsh-security-audit-0.1.4.tgz`.
 
 The `add` command composes the bundle into the profile. `package.json` declares `cordis.patch.yml` through `dsh.bundle.patch`; the patch inserts the `security-audit` row and loads the host entry. Restart DSH after `add` or `remove` so the profile is composed again. Node.js 22.19 or newer and a profile with a compatible `skills` service are required.
 
@@ -102,7 +102,7 @@ The bundle declares one host entry in `package.json` and mounts it with `cordis.
 
 `createSkillProvider` reads the skill frontmatter for the name and description and advertises one candidate with source `bundled`, provider `dsh-security-audit`, rank 600, and both model and user invocation enabled. Loading the candidate reads the body and exposes the skill directory as the base for relative files. A missing file makes discovery incomplete; if the file disappears after discovery, the provider invalidates the catalog and returns no definition. Disposing the plugin unregisters its provider.
 
-The two CLI validators check JSON structure and security-audit-specific invariants. On POSIX systems their input reader uses `O_NOFOLLOW`, `O_NONBLOCK`, a regular-file check, and a bounded read. On Windows the reader verifies a direct local volume, pins directory and file handles, rejects reparse points and non-disk inputs, and enforces the same byte limit and UTF-8 decoding. It fails closed when the platform's native binding or safe path checks are unavailable.
+The two CLI validators check JSON structure and security-audit-specific invariants. On POSIX systems their input reader uses `O_NOFOLLOW`, `O_NONBLOCK`, a regular-file check, and a bounded read; the no-follow flag covers the final path component only, so parent directories are not constrained. On Windows the reader verifies a direct local volume, pins directory and file handles, rejects reparse points and non-disk inputs, and enforces the same byte limit and UTF-8 decoding. It fails closed when the platform's native binding or safe path checks are unavailable.
 
 | Source | Contents |
 |---|---|

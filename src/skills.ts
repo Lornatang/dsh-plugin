@@ -57,7 +57,10 @@ export function createSkillProvider(root: string, control?: SkillProviderControl
         const { rank: _rank, locator: _locator, ...summary } = candidate
         return { ...summary, content }
       } catch (error) {
-        if (signal?.aborted || !isMissing(error)) throw error
+        if (signal?.aborted) throw error
+        // The registry calls get() unguarded: a skill that stopped being loadable
+        // (permissions, partial write, malformed YAML) must read as absent, not
+        // crash the caller. Invalidate so the next list() re-scans the directory.
         control?.invalidate()
         return undefined
       }

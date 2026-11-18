@@ -75,6 +75,9 @@ try {
     await Promise.race([exited, delay(5000)])
     if (server.exitCode === null && server.signalCode === null) { server.kill('SIGKILL'); await exited }
   }
-  if (dirname(resolve(temp)) !== resolve(tmpdir()) || !temp.includes('dsh-security-audit-install-')) throw new Error('unexpected test directory')
-  await rm(temp, { recursive: true, force: true, maxRetries: 3 })
+  if (dirname(resolve(temp)) === resolve(tmpdir()) && temp.includes('dsh-security-audit-install-')) {
+    await rm(temp, { recursive: true, force: true, maxRetries: 3 })
+  } else {
+    process.stderr.write(`warning: refusing to remove unexpected test directory ${temp}\n`)
+  }
 }
