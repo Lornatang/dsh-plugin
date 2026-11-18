@@ -34,7 +34,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-To install the GitHub release tarball instead, use `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.5/lornatang-dsh-security-audit-0.1.5.tgz`.
+To install the GitHub release tarball instead, use `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.6/lornatang-dsh-security-audit-0.1.6.tgz`.
 
 The `add` command composes the bundle into the profile. `package.json` declares `cordis.patch.yml` through `dsh.bundle.patch`; the patch inserts the `security-audit` row and loads the host entry. Restart DSH after `add` or `remove` so the profile is composed again. Node.js 22.19 or newer and a profile with a compatible `skills` service are required.
 

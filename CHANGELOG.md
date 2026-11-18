@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Build JSON paths in the coverage-ledger preflight only when an error is reported, instead of for every visited value.
+- Check JSON whitespace with a character-code set instead of a regular expression per byte.
+- Pre-size the Windows bounded-read buffer from the file size and drop the per-chunk allocation and final copy.
+
 ## 0.1.5
 
 - Stop exporting two validator helpers that only their own modules use; validator behavior and the published skill layout are unchanged.

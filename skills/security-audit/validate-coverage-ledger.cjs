@@ -281,11 +281,19 @@ function preflightJsonText(contents) {
 
 function preflightDocument(root) {
   const errors = createErrorList();
-  const stack = [{ value: root, depth: 0, location: "$" }];
+  // Paths are only needed to explain a failure. Keeping a parent link and one
+  // short segment per node avoids building an O(depth) string for every value.
+  const stack = [{ value: root, depth: 0, root: true, parent: null, label: "" }];
+  const locationOf = (node) => {
+    const parts = [];
+    for (let current = node; current; current = current.parent) parts.push(current.label);
+    return "$" + parts.reverse().join("");
+  };
   let visited = 0;
 
   while (stack.length > 0) {
-    const { value, depth, location } = stack.pop();
+    const node = stack.pop();
+    const { value, depth } = node;
     visited++;
     if (visited > LIMITS.preflightValues) {
       errors.push(`$: exceeds ${LIMITS.preflightValues} total values`);
@@ -293,30 +301,30 @@ function preflightDocument(root) {
     }
     if (value === null || typeof value !== "object") continue;
     if (depth >= LIMITS.nestingDepth) {
-      errors.push(`${location}: exceeds nesting depth limit ${LIMITS.nestingDepth}`);
+      errors.push(`${locationOf(node)}: exceeds nesting depth limit ${LIMITS.nestingDepth}`);
       return errors;
     }
 
     if (Array.isArray(value)) {
-      const limit = location === "$" ? MAX_UNITS : MAX_LIST_ITEMS;
+      const limit = node.root ? MAX_UNITS : MAX_LIST_ITEMS;
       if (value.length > limit) {
-        errors.push(`${location}: exceeds ${limit} entries`);
+        errors.push(`${locationOf(node)}: exceeds ${limit} entries`);
         return errors;
       }
       for (let index = value.length - 1; index >= 0; index--) {
-        stack.push({ value: value[index], depth: depth + 1, location: `${location}[${index}]` });
+        stack.push({ value: value[index], depth: depth + 1, root: false, parent: node, label: `[${index}]` });
       }
       continue;
     }
 
     const keys = Object.keys(value);
     if (keys.length > LIMITS.objectFields) {
-      errors.push(`${location}: exceeds ${LIMITS.objectFields} object fields`);
+      errors.push(`${locationOf(node)}: exceeds ${LIMITS.objectFields} object fields`);
       return errors;
     }
     for (let index = keys.length - 1; index >= 0; index--) {
       const key = keys[index];
-      stack.push({ value: value[key], depth: depth + 1, location: `${location}{${index}}` });
+      stack.push({ value: value[key], depth: depth + 1, root: false, parent: node, label: `{${index}}` });
     }
   }
 

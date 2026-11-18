@@ -99,21 +99,27 @@ function readFileWithinLimit(file, limit) {
     if (size.readBigInt64LE(0) < 0n) fail('input size could not be read safely')
     if (size.readBigInt64LE(0) > BigInt(limit)) fail(`input exceeds ${limit} byte limit`)
 
-    const chunks = []
+    const expected = Number(size.readBigInt64LE(0))
+    let data = Buffer.allocUnsafe(Math.min(limit, expected) + 1)
+    const count = [0]
     let total = 0
     while (true) {
-      const buffer = Buffer.allocUnsafe(Math.min(65536, limit - total + 1))
-      const count = [0]
-      if (!native.read(handle, buffer, buffer.length, count, null)) fail('input could not be read safely')
+      if (total === data.length) {
+        if (total > limit) fail(`input exceeds ${limit} byte limit`)
+        const grown = Buffer.allocUnsafe(Math.min(limit + 1, data.length * 2))
+        data.copy(grown, 0, 0, total)
+        data = grown
+      }
+      const view = data.subarray(total)
+      if (!native.read(handle, view, view.length, count, null)) fail('input could not be read safely')
       const bytes = count[0]
-      if (!Number.isInteger(bytes) || bytes < 0 || bytes > buffer.length) fail('input could not be read safely')
+      if (!Number.isInteger(bytes) || bytes < 0 || bytes > view.length) fail('input could not be read safely')
       if (bytes === 0) break
       total += bytes
       if (total > limit) fail(`input exceeds ${limit} byte limit`)
-      chunks.push(buffer.subarray(0, bytes))
     }
     try {
-      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks, total))
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data.subarray(0, total))
     } catch {
       fail('input is not valid UTF-8')
     }

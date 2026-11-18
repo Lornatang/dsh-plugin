@@ -680,6 +680,10 @@ function readFileWithinLimit(file) {
   }
 }
 
+function isJsonWhitespace(code) {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
+}
+
 function enforceJsonTextLimits(contents) {
   const containers = [];
   let inString = false;
@@ -726,7 +730,7 @@ function enforceJsonTextLimits(contents) {
     } else if (character === ",") {
       const container = containers[containers.length - 1];
       if (container && container.type === "array") container.expectsItem = true;
-    } else if (!/\s/.test(character)) {
+    } else if (!isJsonWhitespace(contents.charCodeAt(index))) {
       markArrayItem();
     }
   }
