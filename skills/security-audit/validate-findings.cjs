@@ -8,9 +8,8 @@
  * report-schema.json, plus finding-specific checks that are clearer in code.
  */
 
-const fs = require("fs");
 const path = require("path");
-const { TextDecoder } = require("util");
+const { SafeInputError, readFileWithinLimit } = require("./bounded-input.cjs");
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const SUPPORTED_TYPES = new Set(["object", "array", "string", "integer", "number", "boolean", "null"]);
@@ -50,13 +49,11 @@ const LIMITS = Object.freeze({
 const VISIBLE_CONTENT = /[^\p{White_Space}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
 const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 const WINDOWS_RESERVED_COMPONENT = /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/iu;
-const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const UNSAFE_DIAGNOSTIC_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu;
 const MAX_DIAGNOSTIC_STRING_LENGTH = 256;
 const PARSED_JSON = Symbol("parsed JSON");
 
 class JsonStructureError extends Error {}
-class SafeInputError extends Error {}
 
 function escapeUnsafeDiagnosticCharacters(value) {
   return String(value).replace(UNSAFE_DIAGNOSTIC_CHARACTER, (character) => {
@@ -614,7 +611,7 @@ function loadSchema(schemaPath) {
   let contents;
   let schema;
   try {
-    contents = readFileWithinLimit(schemaPath);
+    contents = readFileWithinLimit(schemaPath, LIMITS.inputBytes);
     schema = JSON.parse(contents);
   } catch (error) {
     if (error instanceof SafeInputError) throw error;
@@ -623,61 +620,6 @@ function loadSchema(schemaPath) {
   const errors = collectSchemaErrors(schema);
   if (errors.length > 0) throw new Error(`unsupported or invalid report schema:\n${errors.join("\n")}`);
   return schema;
-}
-
-function readFileWithinLimit(file) {
-  if (process.platform === "win32") {
-    try {
-      return require("./windows-safe-input.cjs").readFileWithinLimit(file, LIMITS.inputBytes);
-    } catch (error) {
-      if (error && error.code === "DSH_SAFE_INPUT") throw new SafeInputError(error.message);
-      throw error;
-    }
-  }
-  const noFollow = fs.constants.O_NOFOLLOW;
-  const nonBlock = fs.constants.O_NONBLOCK;
-  if (!Number.isInteger(noFollow) || noFollow === 0 || !Number.isInteger(nonBlock) || nonBlock === 0) {
-    throw new SafeInputError("OS no-follow and nonblocking input protection is unavailable");
-  }
-
-  let descriptor;
-  try {
-    descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow | nonBlock);
-  } catch (error) {
-    if (error && (error.code === "ELOOP" || error.code === "EMLINK")) {
-      throw new SafeInputError("input must not be a symlink");
-    }
-    throw error;
-  }
-  try {
-    const stat = fs.fstatSync(descriptor);
-    if (!stat.isFile()) {
-      throw new SafeInputError("input must be a regular file");
-    }
-    if (stat.size > LIMITS.inputBytes) {
-      throw new SafeInputError(`input exceeds ${LIMITS.inputBytes} byte limit`);
-    }
-
-    const chunks = [];
-    const buffer = Buffer.allocUnsafe(64 * 1024);
-    let bytesRead = 0;
-    while (true) {
-      const count = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-      if (count === 0) break;
-      bytesRead += count;
-      if (bytesRead > LIMITS.inputBytes) {
-        throw new SafeInputError(`input exceeds ${LIMITS.inputBytes} byte limit`);
-      }
-      chunks.push(Buffer.from(buffer.subarray(0, count)));
-    }
-    try {
-      return UTF8_DECODER.decode(Buffer.concat(chunks, bytesRead));
-    } catch {
-      throw new SafeInputError("input is not valid UTF-8");
-    }
-  } finally {
-    fs.closeSync(descriptor);
-  }
 }
 
 function isJsonWhitespace(code) {
@@ -752,7 +694,7 @@ function run(file) {
 
   let contents;
   try {
-    contents = readFileWithinLimit(file);
+    contents = readFileWithinLimit(file, LIMITS.inputBytes);
   } catch (error) {
     const reason = error instanceof SafeInputError ? error.message : "input could not be opened or read safely";
     console.error(`Failed to read findings JSON: ${reason}`);

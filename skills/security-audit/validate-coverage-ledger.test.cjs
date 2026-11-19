@@ -439,6 +439,29 @@ test("preserves candidate provenance when reassignment must be deferred", () => 
   assert.deepEqual(errorsFor([deferred]), []);
 });
 
+test("preserves a shared artifact when local checks are archived together", () => {
+  const localChecks = [
+    localCheck(),
+    localCheck("hunter-1", { invariant: "An unauthenticated request is denied." }),
+  ];
+  const current = unit({
+    status: "blocked",
+    agent_id: "hunter-1",
+    reviewed_paths: ["src/router.ts"],
+    local_checks: localChecks,
+    unresolved: ["The deployed policy is unavailable."],
+  });
+  assert.deepEqual(errorsFor([current]), []);
+
+  const reassigned = unit({
+    attempts: [archivedAttempt({ local_checks: localChecks })],
+    wave: 2,
+    status: "in_progress",
+    agent_id: "hunter-2",
+  });
+  assert.deepEqual(errorsFor([reassigned]), []);
+});
+
 test("rejects reassignment owner reuse and evidence mixing", () => {
   const reusedOwner = unit({
     attempts: [archivedAttempt()],

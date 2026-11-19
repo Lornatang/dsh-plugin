@@ -357,7 +357,9 @@ test("CLI preserves generic oneOf results for custom JSON schemas", () => {
   ];
   try {
     fs.copyFileSync(validatorPath, cli);
-    fs.copyFileSync(path.join(__dirname, "windows-safe-input.cjs"), path.join(directory, "windows-safe-input.cjs"));
+    for (const helper of ["bounded-input.cjs", "windows-safe-input.cjs"]) {
+      fs.copyFileSync(path.join(__dirname, helper), path.join(directory, helper));
+    }
     for (const { branches, item } of cases) {
       const customSchema = { type: "array", items: { oneOf: branches } };
       const records = [item];

@@ -5,9 +5,8 @@
  * Usage: node validate-coverage-ledger.cjs <path-to-coverage-ledger.json>
  */
 
-const fs = require("node:fs");
 const path = require("node:path");
-const { TextDecoder } = require("node:util");
+const { SafeInputError, readFileWithinLimit: readBoundedInput } = require("./bounded-input.cjs");
 
 // Conservative bounds apply before JSON.parse and again to the parsed document.
 const LIMITS = Object.freeze({
@@ -19,7 +18,6 @@ const LIMITS = Object.freeze({
   preflightValues: 500000,
   validationErrors: 100,
 });
-const MAX_INPUT_BYTES = LIMITS.inputBytes;
 const MAX_UNITS = LIMITS.units;
 const MAX_LIST_ITEMS = LIMITS.collectionItems;
 const MAX_TEXT_LENGTH = 4096;
@@ -85,14 +83,12 @@ const WINDOWS_RESERVED_AGENT_ID = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 const VISIBLE_CONTENT = /[^\p{White_Space}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
 const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 const WINDOWS_RESERVED_COMPONENT = /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/iu;
-const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const UNSAFE_DIAGNOSTIC_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu;
 const MAX_DIAGNOSTIC_STRING_LENGTH = 256;
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 
 class JsonStructureError extends Error {}
-class SafeInputError extends Error {}
 
 function escapeUnsafeDiagnosticCharacters(value) {
   return String(value).replace(UNSAFE_DIAGNOSTIC_CHARACTER, (character) => {
@@ -626,6 +622,7 @@ function validateAttempts(value, unit, base, errors) {
     validateStateInvariants(attempt, attemptBase, errors);
 
     if (Array.isArray(attempt.local_checks)) {
+      const attemptArtifacts = [];
       attempt.local_checks.forEach((check, checkIndex) => {
         if (!isObject(check)) return;
         if (priorOwners.has(check.agent_id)) {
@@ -634,8 +631,9 @@ function validateAttempts(value, unit, base, errors) {
         if (typeof check.artifact === "string" && priorArtifacts.has(check.artifact)) {
           errors.push(`${attemptBase}.local_checks[${checkIndex}].artifact: artifact from an earlier attempt cannot be reused`);
         }
-        if (check.method === "local" && typeof check.artifact === "string") priorArtifacts.add(check.artifact);
+        if (check.method === "local" && typeof check.artifact === "string") attemptArtifacts.push(check.artifact);
       });
+      for (const artifact of attemptArtifacts) priorArtifacts.add(artifact);
     }
     if (hasFreshOwner) priorOwners.add(attempt.agent_id);
   });
@@ -732,51 +730,7 @@ function collectUnitErrors(unit, index) {
 }
 
 function readFileWithinLimit(file) {
-  if (process.platform === "win32") {
-    try {
-      return require("./windows-safe-input.cjs").readFileWithinLimit(file, MAX_INPUT_BYTES);
-    } catch (error) {
-      if (error && error.code === "DSH_SAFE_INPUT") throw new SafeInputError(error.message);
-      throw error;
-    }
-  }
-  const noFollow = fs.constants.O_NOFOLLOW;
-  const nonBlock = fs.constants.O_NONBLOCK;
-  if (!Number.isInteger(noFollow) || noFollow === 0 || !Number.isInteger(nonBlock) || nonBlock === 0) {
-    // Node exposes no race-safe fallback on these platforms, so reject all inputs.
-    throw new SafeInputError("OS no-follow and nonblocking input protection is unavailable");
-  }
-
-  let descriptor;
-  try {
-    descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow | nonBlock);
-  } catch (error) {
-    if (error && (error.code === "ELOOP" || error.code === "EMLINK")) throw new SafeInputError("input must not be a symlink");
-    throw error;
-  }
-  try {
-    const stat = fs.fstatSync(descriptor);
-    if (!stat.isFile()) throw new SafeInputError("input must be a regular file");
-    if (stat.size > MAX_INPUT_BYTES) throw new SafeInputError(`input exceeds ${MAX_INPUT_BYTES} byte limit`);
-
-    const chunks = [];
-    const buffer = Buffer.allocUnsafe(64 * 1024);
-    let bytesRead = 0;
-    while (true) {
-      const count = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-      if (count === 0) break;
-      bytesRead += count;
-      if (bytesRead > MAX_INPUT_BYTES) throw new SafeInputError(`input exceeds ${MAX_INPUT_BYTES} byte limit`);
-      chunks.push(Buffer.from(buffer.subarray(0, count)));
-    }
-    try {
-      return UTF8_DECODER.decode(Buffer.concat(chunks, bytesRead));
-    } catch {
-      throw new SafeInputError("input is not valid UTF-8");
-    }
-  } finally {
-    fs.closeSync(descriptor);
-  }
+  return readBoundedInput(file, LIMITS.inputBytes);
 }
 
 function validateDocument(ledger) {
