@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+
+- Allow checks in one archived attempt to share evidence while rejecting reuse across attempts.
+- Share the bounded file reader across both CLI validators.
+
 ## 0.1.6
 
 - Build JSON paths in the coverage-ledger preflight only when an error is reported, instead of for every visited value.
