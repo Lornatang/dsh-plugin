@@ -164,6 +164,8 @@ These limits describe what the skill needs from the profile and what its validat
 
 `node scripts/benchmark-validation.mjs` measures the findings CLI with 1,000 records and, on Windows, a bounded 4 MiB read. Pass another checkout's `skills/security-audit` directory to compare implementations on the same machine.
 
+The [blinded review quality benchmark](benchmarks/review-quality/README.md) scores verdicts and source citations on toy state contracts. Run it from a source checkout.
+
 Node.js 22.19 or newer is required. The package declares the `skills` service and Cordis as peers, uses `yaml` to read frontmatter, and ships platform-specific Windows native bindings as optional dependencies. The package declares no DSH version constraint.
 
 </details>

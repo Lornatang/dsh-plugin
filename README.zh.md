@@ -164,6 +164,8 @@ bundle 在 `package.json` 中声明一个宿主入口，通过 `cordis.patch.yml
 
 `node scripts/benchmark-validation.mjs` 测量发现校验命令处理 1,000 条记录的时间，以及 Windows 上有大小限制的 4 MiB 文件读取时间。可传入另一个工作副本的 `skills/security-audit` 目录，在同一台机器上对比实现。
 
+[盲测审查质量基准](benchmarks/review-quality/README.md) 使用简短的状态约束示例，衡量审查结论和源码引用的准确性。请在源代码工作副本中运行。
+
 需要 Node.js 22.19 或更高版本。软件包将 `skills` 服务与 Cordis 声明为 peer，使用 `yaml` 读取 frontmatter，并将各平台的 Windows 原生绑定作为可选依赖。软件包不限制 DSH 版本号。
 
 </details>
