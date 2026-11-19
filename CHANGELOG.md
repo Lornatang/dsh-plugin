@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+
+- Add a development-only blinded source-review benchmark with separate answer keys, known issues, clean controls, and an evidence-insufficient case.
+- Score static support, false positives, unresolved decisions, and source citation precision.
+
 ## 0.1.7
 
 - Allow checks in one archived attempt to share evidence while rejecting reuse across attempts.

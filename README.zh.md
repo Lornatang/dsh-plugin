@@ -34,7 +34,7 @@ dsh plugin --profile <name> add @lornatang/dsh-security-audit
 dsh plugin --profile <name> remove @lornatang/dsh-security-audit
 ```
 
-如需安装 GitHub Release 包，可使用 `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.7/lornatang-dsh-security-audit-0.1.7.tgz`。
+如需安装 GitHub Release 包，可使用 `dsh plugin --profile <name> add https://github.com/Lornatang/dsh-security-audit/releases/download/v0.1.8/lornatang-dsh-security-audit-0.1.8.tgz`。
 
 `add` 命令将 bundle 组合进 profile。`package.json` 通过 `dsh.bundle.patch` 声明 `cordis.patch.yml`；该 patch 插入 `security-audit` 行并加载宿主入口。添加或移除后重启 DSH，让 profile 重新组合。需要 Node.js 22.19 或更高版本，以及提供兼容 `skills` 服务的 profile。
 
