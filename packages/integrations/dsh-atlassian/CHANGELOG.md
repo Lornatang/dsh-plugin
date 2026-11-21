@@ -1,0 +1,107 @@
+# Changelog
+
+## 0.1.15 - 2026-11-19
+
+- Serialize connection replacement and refresh the Jira site cache when the connection changes.
+- Apply connection settings only after saving them and use the same Jira resource parser during connection and board loading.
+
+## 0.1.14 - 2026-11-19
+
+- Reuse the site resolved while connecting for the first Jira board render, removing a duplicate accessibleatlassianresources MCP round-trip; the board still falls back to its own lookup when the cached site is stale.
+
+## 0.1.13 - 2026-11-19
+
+- Remove a duplicated request-target pre-check left over from the route hardening; malformed URLs still receive the same 400 response.
+- Share one loopback-host predicate between the OAuth callback and the browser helper instead of two copies.
+- Drop the unused OAuth provider logger option, the unused board availability helper and a redundant board options type.
+
+## 0.1.12 - 2026-11-18
+
+- Re-arm the OAuth callback listener when authorization starts, so a callback port that becomes available after a failed bind no longer leaves the published redirect URI pointing at port 0.
+- Publish the authorization URL only while a callback wait is armed, preventing a browser flow that would land on an unbound listener and fail with HTTP 400.
+- Reset the observed token snapshot after a successful credential invalidation, so the built-in re-authorization no longer fails with a stale-credentials conflict.
+- Hold the shared session lease until an in-flight token exchange settles instead of releasing it from the client error hook, avoiding a spurious invalid-session-lock failure.
+- Validate the site label reported by the server before caching it.
+- Reject malformed percent-encoded issue keys with a 400 response and bound request-body reads with a deadline.
+- Reflect saved connection settings in the live configuration instead of only in the planner draft.
+- Include a GitHub release archive; this release is also published to npm.
+
+## 0.1.11 - 2026-11-17
+
+- Invalidate the cached Jira site whenever the connection is replaced and deduplicate concurrent site lookups, so a reconnect can never serve data from the previous site.
+- Reuse keep-alive connections for self-hosted REST requests and close the socket pool on reconnect, disconnect, and disposal.
+- Scan Cloud SSE size limits with native buffer searches instead of a per-byte loop, and wake connection waiters on state changes instead of polling.
+- Share one status poller between the settings and board client panels and skip re-renders when the snapshot is unchanged.
+- Show a clear empty state on the Jira board for Confluence-only profiles instead of a missing-tool error.
+- Expand issue keys and summaries literally in board handoff prompts.
+- Destroy stored credentials when a configuration change points the profile at a different endpoint identity.
+- Reject malformed request URLs and issue-key encodings with 400 responses, and bound request-body reads with a deadline.
+- Bound the cross-process refresh lock even when toolCallTimeoutMs is configured very large.
+- Include a GitHub release archive; this release is also published to npm.
+
+## 0.1.10 - 2026-11-15
+
+- Coordinate OAuth token rotation across processes sharing a profile, including delayed responses, shutdown, callback-port changes, and concurrent session updates.
+- Include a GitHub release archive; npm is not published for this release.
+
+## 0.1.8 - 2026-11-15
+
+- Serialize rotating OAuth refreshes across concurrent MCP requests, preserve newer credentials after delayed responses, and cancel refreshes on disconnect.
+- Include a GitHub release archive; npm is not published for this release.
+
+## 0.1.7 - 2026-11-15
+
+- Rewrite the README to the package-bundle documentation convention and add a
+  Chinese translation; the package now ships `README.md` and `README.zh.md`.
+- Publish `cordis.patch.yml` through the package `exports` map and include the
+  Chinese README in the published files.
+- Accept the bilingual language switcher in the documentation language check.
+
+## 0.1.6
+
+- Allow any DSH version in the package metadata and run integration checks against the selected host.
+
+## 0.1.5
+
+- Rename the package to `@lornatang/dsh-atlassian`, retaining existing profile
+  settings and stored credentials when migrating from the previous package.
+- Limit Cloud response bodies and individual streaming events to prevent
+  excessive memory use from oversized responses.
+
+## 0.1.4
+
+- Keep the README focused on installation and everyday use, and remove an
+  unavailable release download link.
+
+## 0.1.3
+
+- Support explicitly trusted self-signed server certificates in DSH Desktop
+  while retaining certificate and hostname verification.
+- Let users edit service URLs in Settings, with Atlassian Cloud selected when
+  both URLs are blank.
+- Refresh the English settings and Jira board interfaces for light and dark
+  themes.
+
+## 0.1.2
+
+- Align the English README structure and configuration reference with the
+  other DSH plugins.
+
+## 0.1.1
+
+- Add self-hosted Jira Server and Confluence Server/Data Center REST mode,
+  with Basic or personal access token authentication and a Jira board.
+- Verify TLS by default, allow a configured CA file, and require an explicit
+  opt-in for HTTP endpoints.
+- Restrict Cloud OAuth network requests to HTTPS and harden local credential
+  file access.
+- Provide an English interface and documentation.
+
+## 0.1.0
+
+- Connect DSH to the Atlassian remote MCP server with OAuth 2.1 and PKCE.
+- Expose discovered tools to agents and provide a Jira board with issue details,
+  filters, transitions and handoff to agent sessions.
+- Isolate OAuth sessions by DSH profile, restrict local credential files, and
+  require the DSH request fence for plugin endpoints.
+- Provide prebuilt npm packaging and integration tests against DSH 0.2.2-rc.2.

@@ -1,0 +1,281 @@
+import { randomBytes } from 'node:crypto'
+import { createServer, type Server, type ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
+import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
+import type { SessionLease, SessionStore } from './store.js'
+
+export interface Logger { info(message: string): void; warn(message: string): void; error(message: string): void }
+export interface AuthorizationCallback { code: string; state: string | undefined }
+export class RedirectRegistrationChanged extends Error {}
+
+const MAX_CLOUD_RESPONSE_BYTES = 10 * 1024 * 1024
+
+/** Bound decoded response bytes, including error bodies and individual SSE events. */
+function limitCloudResponse(response: Response, allowEvents: boolean): Response {
+  if (!response.body) return response
+  const events = allowEvents && response.ok && /^text\/event-stream(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')
+  let size = 0
+  let lineHasContent = false
+  let afterCarriageReturn = false
+  const stream = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      if (!events) {
+        size += chunk.byteLength
+        if (size > MAX_CLOUD_RESPONSE_BYTES) throw new Error('Atlassian Cloud response exceeded the size limit')
+      } else {
+        // SSE events end at an empty line. Track CR, LF and CRLF separately,
+        // including separators split across network chunks. Scan with native
+        // indexOf instead of a per-byte loop: this is the hot path for every
+        // Cloud MCP response.
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+        let pos = 0
+        if (afterCarriageReturn && buf.length > 0 && buf[0] === 10) {
+          size++
+          if (size > MAX_CLOUD_RESPONSE_BYTES) throw new Error('Atlassian Cloud event exceeded the size limit')
+          afterCarriageReturn = false
+          pos = 1
+        }
+        while (pos < buf.length) {
+          const cr = buf.indexOf(13, pos)
+          const lf = buf.indexOf(10, pos)
+          if (cr === -1 && lf === -1) {
+            size += buf.length - pos
+            if (size > MAX_CLOUD_RESPONSE_BYTES) throw new Error('Atlassian Cloud event exceeded the size limit')
+            lineHasContent = true
+            afterCarriageReturn = false
+            break
+          }
+          const term = cr !== -1 && (lf === -1 || cr < lf) ? cr : lf
+          size += term - pos + 1
+          if (size > MAX_CLOUD_RESPONSE_BYTES) throw new Error('Atlassian Cloud event exceeded the size limit')
+          if (term > pos) lineHasContent = true
+          if (!lineHasContent) size = 0
+          lineHasContent = false
+          afterCarriageReturn = buf[term] === 13
+          pos = term + 1
+          if (afterCarriageReturn && pos < buf.length && buf[pos] === 10) {
+            size++
+            if (size > MAX_CLOUD_RESPONSE_BYTES) throw new Error('Atlassian Cloud event exceeded the size limit')
+            afterCarriageReturn = false
+            pos++
+          }
+        }
+      }
+      controller.enqueue(chunk)
+    },
+  }))
+  const limited = new Response(stream, { status: response.status, statusText: response.statusText, headers: response.headers })
+  // The SDK uses these properties to resolve and report redirect targets.
+  Object.defineProperties(limited, {
+    url: { value: response.url },
+    redirected: { value: response.redirected },
+    type: { value: response.type },
+  })
+  return limited
+}
+
+/** Loopback hosts may use plain HTTP for local MCP and OAuth endpoints. */
+export function isLoopbackHost(hostname: string): boolean {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(hostname)
+}
+
+export function secureUrl(url: URL, allowLoopbackHttp: boolean): void {
+  if (url.username || url.password || (url.protocol !== 'https:' && !(allowLoopbackHttp && url.protocol === 'http:' && isLoopbackHost(url.hostname)))) {
+    throw new Error('Cloud and OAuth endpoints must use HTTPS without embedded credentials')
+  }
+}
+
+/** Restrict every discovered OAuth and MCP endpoint, including redirect targets. */
+export function createCloudFetch(serverUrl: URL): { fetch: FetchLike; allowLoopbackHttp: boolean } {
+  const allowLoopbackHttp = serverUrl.protocol === 'http:' && isLoopbackHost(serverUrl.hostname)
+  secureUrl(serverUrl, allowLoopbackHttp)
+  return {
+    allowLoopbackHttp,
+    fetch: async (value, init) => {
+      secureUrl(new URL(value), allowLoopbackHttp)
+      // The SDK performs its own same-origin redirect handling. Never let fetch
+      // follow a redirect before its next target has passed the check above.
+      const response = await globalThis.fetch(value, { ...init, redirect: init?.redirect === 'error' ? 'error' : 'manual' })
+      const accept = new Headers(init?.headers).get('accept') ?? ''
+      return limitCloudResponse(response, /(?:^|,)\s*text\/event-stream(?:\s*[,;]|\s*$)/i.test(accept))
+    },
+  }
+}
+
+type Pending = { state: string; complete: (value: AuthorizationCallback | Error) => void }
+
+export class CallbackServer {
+  #server?: Server
+  #port = 0
+  #pending?: Pending
+
+  get redirectUri(): string { return `http://127.0.0.1:${this.#port}/callback` }
+  get listening(): boolean { return this.#server?.listening === true }
+
+  async listen(preferredPort: number): Promise<number> {
+    if (this.#server?.listening) return this.#port
+    const stale = this.#server
+    if (stale) {
+      this.#server = undefined
+      this.cancelWait()
+      await new Promise<void>((resolve) => { stale.close(() => resolve()) })
+    }
+    const server = createServer((req, res) => {
+      let url: URL
+      try { url = new URL(req.url ?? '/', 'http://127.0.0.1') } catch { res.writeHead(400).end(); return }
+      if (req.method !== 'GET' || url.pathname !== '/callback') { res.writeHead(404).end(); return }
+      const pending = this.#pending
+      const state = url.searchParams.get('state')
+      if (!pending || state !== pending.state) { this.#reply(res, false, 'Authorization state is invalid or expired.'); return }
+      const error = url.searchParams.get('error')
+      if (error) {
+        const detail = url.searchParams.get('error_description') || error
+        this.#reply(res, false, `Authorization failed: ${detail}`)
+        pending.complete(new Error(`authorization failed: ${detail}`))
+        return
+      }
+      const code = url.searchParams.get('code')
+      if (!code) { this.#reply(res, false, 'Authorization code is missing.'); pending.complete(new Error('authorization callback carried no code')); return }
+      this.#reply(res, true, 'Authorization complete. Return to DSH.')
+      pending.complete({ code, state })
+    })
+    const bind = (port: number): Promise<number> => new Promise((resolve, reject) => {
+      const failed = (error: Error): void => reject(error)
+      server.once('error', failed)
+      server.listen(port, '127.0.0.1', () => { server.off('error', failed); resolve((server.address() as AddressInfo).port) })
+    })
+    try { this.#port = await bind(preferredPort) }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      // A privileged or unavailable port must not leave redirectUri pointing at
+      // port 0; retry any bind failure that a dynamic port can avoid.
+      if (preferredPort === 0 || (code !== 'EADDRINUSE' && code !== 'EACCES' && code !== 'EADDRNOTAVAIL')) throw error
+      this.#port = await bind(0)
+    }
+    server.on('error', () => this.cancelWait())
+    this.#server = server
+    return this.#port
+  }
+
+  waitForCode(timeoutMs: number, state: string | undefined, signal?: AbortSignal): Promise<AuthorizationCallback> {
+    if (!state) return Promise.reject(new Error('authorization URL did not contain state'))
+    this.cancelWait()
+    return new Promise((resolve, reject) => {
+      let timer: NodeJS.Timeout
+      const done = (value: AuthorizationCallback | Error): void => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
+        this.#pending = undefined
+        if (value instanceof Error) reject(value)
+        else resolve(value)
+      }
+      const abort = (): void => done(new Error('authorization cancelled'))
+      this.#pending = { state, complete: done }
+      timer = setTimeout(() => done(new Error('authorization timed out')), timeoutMs)
+      timer.unref()
+      if (signal?.aborted) abort()
+      else signal?.addEventListener('abort', abort, { once: true })
+    })
+  }
+
+  cancelWait(): void { this.#pending?.complete(new Error('authorization cancelled')) }
+
+  async close(): Promise<void> {
+    this.cancelWait()
+    const server = this.#server
+    this.#server = undefined
+    if (!server) return
+    await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections?.() })
+  }
+
+  #reply(res: ServerResponse, ok: boolean, text: string): void {
+    const safe = text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c)
+    res.writeHead(ok ? 200 : 400, {
+      'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+    })
+    res.end(`<!doctype html><meta charset="utf-8"><title>DSH Atlassian</title><p>${safe}</p>`)
+  }
+}
+
+export class AtlassianOAuthProvider implements OAuthClientProvider {
+  readonly #store: SessionStore
+  readonly #redirect: () => string
+  readonly #onUrl: (url: string) => void
+  readonly #allowLoopbackHttp: boolean
+  readonly #active: () => boolean
+  readonly #tokenRead: (value: OAuthTokens | undefined) => void
+  readonly #refreshExpected: () => OAuthTokens | undefined
+  readonly #authFinished: () => void
+  readonly #lease: () => SessionLease | undefined
+  readonly #observedTokens: () => OAuthTokens | undefined
+  readonly #signal: () => AbortSignal | undefined
+  readonly #resetObservation: () => void
+
+  constructor(options: { store: SessionStore; redirectUri: () => string; onAuthorizationUrl: (url: string) => void; allowLoopbackHttp: boolean; active?: () => boolean; tokenRead?: (tokens: OAuthTokens | undefined) => void; refreshExpected?: () => OAuthTokens | undefined; authFinished?: () => void; lease?: () => SessionLease | undefined; observedTokens?: () => OAuthTokens | undefined; signal?: () => AbortSignal | undefined; resetObservation?: () => void }) {
+    this.#store = options.store
+    this.#redirect = options.redirectUri
+    this.#onUrl = options.onAuthorizationUrl
+    this.#allowLoopbackHttp = options.allowLoopbackHttp
+    this.#active = options.active ?? (() => true)
+    this.#tokenRead = options.tokenRead ?? (() => undefined)
+    this.#refreshExpected = options.refreshExpected ?? (() => undefined)
+    this.#authFinished = options.authFinished ?? (() => undefined)
+    this.#lease = options.lease ?? (() => undefined)
+    this.#observedTokens = options.observedTokens ?? (() => undefined)
+    this.#signal = options.signal ?? (() => undefined)
+    this.#resetObservation = options.resetObservation ?? (() => undefined)
+  }
+  #check(): void { if (!this.#active()) throw new Error('atlassian: connection cancelled') }
+  get redirectUrl(): string { this.#check(); return this.#redirect() }
+  get clientMetadata(): OAuthClientMetadata {
+    return { client_name: 'DSH Atlassian', redirect_uris: [this.redirectUrl], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], token_endpoint_auth_method: 'none' }
+  }
+  state(): string { this.#check(); return randomBytes(16).toString('hex') }
+  clientInformation(): OAuthClientInformationMixed | undefined { this.#check(); return this.#store.current.clientInformation }
+  async saveClientInformation(value: OAuthClientInformationMixed): Promise<void> { await this.#store.patch({ clientInformation: value }, this.#active, this.#lease(), this.#observedTokens(), this.#signal(), true) }
+  tokens(): OAuthTokens | undefined { this.#check(); const value = this.#store.current.tokens; this.#tokenRead(value); return value }
+  async saveTokens(value: OAuthTokens): Promise<void> {
+    try { await this.#store.saveTokens(value, this.#active, this.#refreshExpected() ?? this.#observedTokens(), this.#lease(), this.#signal(), true) } finally { this.#authFinished() }
+  }
+  redirectToAuthorization(url: URL): void {
+    this.#check()
+    secureUrl(url, this.#allowLoopbackHttp)
+    this.#onUrl(url.href)
+    this.#authFinished()
+  }
+  async saveCodeVerifier(value: string): Promise<void> {
+    try {
+      const registered = this.#store.current.redirectUri
+      const actual = this.#redirect()
+      if (registered && registered !== actual) {
+        await this.#store.rebindRedirect(actual, this.#observedTokens(), this.#active, this.#lease(), this.#signal())
+        throw new RedirectRegistrationChanged('atlassian: callback changed; restarting authorization')
+      }
+      await this.#store.patch({ codeVerifier: value }, this.#active, this.#lease(), this.#observedTokens(), this.#signal(), true)
+    } finally { this.#authFinished() }
+  }
+  codeVerifier(): string {
+    this.#check()
+    const value = this.#store.current.codeVerifier
+    if (!value) throw new Error('missing PKCE verifier')
+    return value
+  }
+  async invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier' | 'discovery'): Promise<void> {
+    try {
+      const expected = this.#refreshExpected() ?? this.#observedTokens()
+      let cleared = false
+      if (scope === 'all') cleared = await this.#store.clearCredentialsIf(this.#active, expected, this.#lease(), this.#signal(), true, 'tokens', 'clientInformation', 'codeVerifier')
+      else if (scope === 'client') cleared = await this.#store.clearCredentialsIf(this.#active, expected, this.#lease(), this.#signal(), true, 'clientInformation')
+      else if (scope === 'tokens') cleared = await this.#store.clearCredentialsIf(this.#active, expected, this.#lease(), this.#signal(), true, 'tokens')
+      else if (scope === 'verifier') cleared = await this.#store.clearCredentialsIf(this.#active, expected, this.#lease(), this.#signal(), true, 'codeVerifier')
+      // Only a clear this operation actually performed invalidates its observation.
+      // If another process removed or replaced the session, the stale observation
+      // must keep refusing credential writes.
+      if (cleared && (scope === 'all' || scope === 'tokens')) this.#resetObservation()
+    } finally { this.#authFinished() }
+  }
+}
