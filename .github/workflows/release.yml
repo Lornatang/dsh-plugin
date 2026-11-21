@@ -1,0 +1,134 @@
+name: Release plugin
+
+on:
+  push:
+    tags: ['dsh-*-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      directory: ${{ steps.package.outputs.directory }}
+      plugin: ${{ steps.package.outputs.plugin }}
+      version: ${{ steps.package.outputs.version }}
+      archive: ${{ steps.package.outputs.archive }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Match the tag to one package
+        id: package
+        shell: bash
+        run: |
+          pattern='^(dsh-[a-z0-9-]+)-v([0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.+-]+)?)$'
+          [[ "$GITHUB_REF_NAME" =~ $pattern ]] || { echo "Invalid plugin release tag"; exit 1; }
+          plugin="${BASH_REMATCH[1]}"
+          version="${BASH_REMATCH[2]}"
+          mapfile -t directories < <(find packages -mindepth 2 -maxdepth 2 -type d -name "$plugin")
+          (( ${#directories[@]} == 1 )) || { echo "Expected one package named $plugin"; exit 1; }
+          directory="${directories[0]}"
+          actual_name="$(jq -r .name "$directory/package.json")"
+          actual_version="$(jq -r .version "$directory/package.json")"
+          [[ "$actual_name" == "@lornatang/$plugin" && "$actual_version" == "$version" ]] ||
+            { echo "Tag does not match package $actual_name@$actual_version"; exit 1; }
+          {
+            echo "directory=$directory"
+            echo "plugin=$plugin"
+            echo "version=$version"
+            echo "archive=lornatang-$plugin-$version.tgz"
+          } >> "$GITHUB_OUTPUT"
+
+  analyzer:
+    needs: metadata
+    if: needs.metadata.outputs.plugin == 'dsh-caveman'
+    uses: ./.github/workflows/caveman-analyzer.yml
+
+  release:
+    needs: [metadata, analyzer]
+    if: >-
+      !cancelled() && needs.metadata.result == 'success' &&
+      (needs.analyzer.result == 'success' || needs.analyzer.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: ${{ needs.metadata.outputs.directory }}
+    env:
+      PLUGIN: ${{ needs.metadata.outputs.plugin }}
+      VERSION: ${{ needs.metadata.outputs.version }}
+      ARCHIVE: ${{ needs.metadata.outputs.archive }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.metadata.outputs.plugin == 'dsh-caveman'
+        with:
+          pattern: analyzer-*
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+      - name: Generate checksums for the analyzer assets
+        if: needs.metadata.outputs.plugin == 'dsh-caveman'
+        run: node scripts/write-learn-checksums.mjs "$RUNNER_TEMP/release-assets"
+      - run: npm ci --no-audit --no-fund ${{ needs.metadata.outputs.plugin == 'dsh-security-audit' && '--ignore-scripts' || '' }}
+      - run: npm run typecheck
+      - name: Test and pack the plugin
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          npm pack --pack-destination "$RUNNER_TEMP/release-assets"
+          test -s "$RUNNER_TEMP/release-assets/$ARCHIVE"
+          git diff --exit-code -- lib
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [[ "$draft" == false ]]; then
+            gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -Fx "$ARCHIVE"
+            exit 0
+          fi
+          if [[ "$draft" != true ]]; then
+            options=(--draft --verify-tag --title "$PLUGIN $VERSION"
+                     --notes "Install with dsh plugin --profile web add @lornatang/$PLUGIN after the npm version is available, or use the attached tarball.")
+            if [[ "$VERSION" == *-* ]]; then options+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" "${options[@]}"
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-assets/"* --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false
+
+  npm:
+    needs: [metadata, release]
+    if: vars.PUBLISH_TO_NPM == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      ARCHIVE: ${{ needs.metadata.outputs.archive }}
+      VERSION: ${{ needs.metadata.outputs.version }}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Download the released package
+        run: gh release download "$GITHUB_REF_NAME" --pattern "$ARCHIVE"
+      - name: Publish to npm
+        run: |
+          dist_tag=latest
+          if [[ "$VERSION" == *-* ]]; then dist_tag=next; fi
+          npm publish "./$ARCHIVE" --access public --tag "$dist_tag"

@@ -66,11 +66,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lornatang/dsh-security-audit.git"
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/security/dsh-security-audit"
   },
-  "homepage": "https://github.com/Lornatang/dsh-security-audit#readme",
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/security/dsh-security-audit#readme",
   "bugs": {
-    "url": "https://github.com/Lornatang/dsh-security-audit/issues"
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
   },
   "publishConfig": {
     "access": "public",

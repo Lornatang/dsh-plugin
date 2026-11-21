@@ -39,8 +39,8 @@ dsh plugin --profile <name> remove @lornatang/dsh-caveman
 也可以从仓库打包并安装：
 
 ```sh
-git clone https://github.com/Lornatang/dsh-caveman.git
-cd dsh-caveman
+git clone https://github.com/Lornatang/dsh-plugin.git
+cd dsh-plugin/packages/workflow/dsh-caveman
 npm ci
 npm pack
 dsh plugin --profile <name> add ./lornatang-dsh-caveman-0.1.5.tgz

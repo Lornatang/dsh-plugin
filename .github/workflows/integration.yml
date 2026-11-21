@@ -1,0 +1,169 @@
+name: Integration
+
+on:
+  push:
+    branches: [main, 'ci/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dsh-frontgate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/access/dsh-frontgate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      # pnpm 12 needs its install script to replace its bootstrap shim with the
+      # native executable used by DSH's direct process spawn.
+      - run: npm install --prefix "$RUNNER_TEMP/frontgate-pnpm" --no-audit --no-fund pnpm@12.16.1
+      - run: echo "$RUNNER_TEMP/frontgate-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: npm install --prefix "$RUNNER_TEMP/frontgate-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm run test:dsh
+        env:
+          DSH_TEST_INSTALL_DIR: ${{ runner.temp }}/frontgate-dsh
+
+  dsh-atlassian:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/integrations/dsh-atlassian
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm install --prefix "$RUNNER_TEMP/bridge-pnpm" --no-audit --no-fund pnpm@12.16.1
+      - run: echo "$RUNNER_TEMP/bridge-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: npm install --prefix "$RUNNER_TEMP/bridge-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm run test:dsh
+        env:
+          DSH_TEST_BINARY: ${{ runner.temp }}/bridge-dsh/node_modules/.bin/dsh
+          CHROME_PATH: /usr/bin/google-chrome
+      - run: npm run test:dsh
+        env:
+          DSH_TEST_BINARY: ${{ runner.temp }}/bridge-dsh/node_modules/.bin/dsh
+          DSH_TEST_MODE: server
+          DSH_TEST_UPGRADE_FROM: legacy-fixture
+          DSH_TEST_LANGUAGE: en-US
+          CHROME_PATH: /usr/bin/google-chrome
+      - run: npm run test:dsh
+        env:
+          DSH_TEST_BINARY: ${{ runner.temp }}/bridge-dsh/node_modules/.bin/dsh
+          DSH_TEST_MODE: server
+          DSH_TEST_LANGUAGE: zh-CN
+          CHROME_PATH: /usr/bin/google-chrome
+
+  dsh-github:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/integrations/dsh-github
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm install --prefix "$RUNNER_TEMP/github-pnpm" --no-audit --no-fund pnpm@12.16.1
+      - run: echo "$RUNNER_TEMP/github-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: npm install --prefix "$RUNNER_TEMP/github-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm run test:dsh
+        env:
+          DSH_TEST_BINARY: ${{ runner.temp }}/github-dsh/node_modules/.bin/dsh
+          CHROME_PATH: /usr/bin/google-chrome
+          DSH_TEST_LANGUAGE: zh-CN
+
+  dsh-notion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/integrations/dsh-notion
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm install --prefix "$RUNNER_TEMP/notion-pnpm" --no-audit --no-fund pnpm@12.16.1
+      - run: echo "$RUNNER_TEMP/notion-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: npm install --prefix "$RUNNER_TEMP/notion-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm run test:dsh
+        env:
+          DSH_TEST_BINARY: ${{ runner.temp }}/notion-dsh/node_modules/.bin/dsh
+          CHROME_PATH: /usr/bin/google-chrome
+          DSH_TEST_LANGUAGE: zh-CN
+
+  dsh-caveman:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/workflow/dsh-caveman
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: packages/workflow/dsh-caveman/vendor/caveman/go.mod
+          cache-dependency-path: packages/workflow/dsh-caveman/vendor/caveman/go.sum
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Build and test DSH session analysis
+        working-directory: packages/workflow/dsh-caveman/vendor/caveman
+        run: |
+          CGO_ENABLED=0 go test ./proxy/internal/store -run '^TestDSH(Source|Locator)' -count=1
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/dsh-caveman-learn" ./proxy/cmd/caveman-proxy
+      - name: Fetch runtime binaries
+        run: |
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-proxy_linux_amd64 -o "$RUNNER_TEMP/caveman-proxy"
+          echo "393b4e9b58f52eddcf77a24d32fd98aa0be011f8cff77498cf7ef55d9901195c  $RUNNER_TEMP/caveman-proxy" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/caveman-proxy"
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-blocks_linux_amd64 -o "$RUNNER_TEMP/caveman-blocks"
+          echo "edb917309d776e5b12aa009334049da1ca8ea4de33679490df284e6f7682a006  $RUNNER_TEMP/caveman-blocks" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/caveman-blocks"
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-browse_linux_amd64 -o "$RUNNER_TEMP/caveman-browse"
+          echo "ef3f72384536a65589badd15ba3f8b2f901c4d48af99eac80c4d1c7569729dd9  $RUNNER_TEMP/caveman-browse" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/caveman-browse"
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-mcp_linux_amd64 -o "$RUNNER_TEMP/caveman-mcp"
+          echo "23334424cf813117c497d49e1410d4b02f033db0a5f12ff8859e9bb62317f3cf  $RUNNER_TEMP/caveman-mcp" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/caveman-mcp"
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/cavemem_linux_amd64 -o "$RUNNER_TEMP/cavemem"
+          echo "ef11cb6d070a2217853330df19a842a2a94cb712bc2ae1a2fb1137e292e2653b  $RUNNER_TEMP/cavemem" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/cavemem"
+      - run: node --test tests/auto.integration.test.mjs tests/cli.integration.test.mjs tests/compression.integration.test.mjs tests/blocks.integration.test.mjs tests/browse.integration.test.mjs tests/mcp.integration.test.mjs tests/memory.integration.test.mjs tests/native.integration.test.mjs tests/learn.integration.test.mjs
+        env:
+          DSH_CAVEMAN_LEARN_BINARY: ${{ runner.temp }}/dsh-caveman-learn
+          CAVEMAN_PROXY_BINARY: ${{ runner.temp }}/caveman-proxy
+          CAVEMAN_BLOCKS_BINARY: ${{ runner.temp }}/caveman-blocks
+          CAVEMAN_BROWSE_BINARY: ${{ runner.temp }}/caveman-browse
+          CAVEMAN_BROWSE_CHROME: /usr/bin/google-chrome
+          CAVEMAN_MCP_BINARY: ${{ runner.temp }}/caveman-mcp
+          CAVEMEM_BINARY: ${{ runner.temp }}/cavemem

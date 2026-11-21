@@ -120,11 +120,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lornatang/dsh-caveman.git"
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/workflow/dsh-caveman"
   },
-  "homepage": "https://github.com/Lornatang/dsh-caveman#readme",
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/workflow/dsh-caveman#readme",
   "bugs": {
-    "url": "https://github.com/Lornatang/dsh-caveman/issues"
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
   },
   "publishConfig": {
     "access": "public",

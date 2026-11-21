@@ -80,11 +80,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lornatang/dsh-notion.git"
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/integrations/dsh-notion"
   },
-  "homepage": "https://github.com/Lornatang/dsh-notion#readme",
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/integrations/dsh-notion#readme",
   "bugs": {
-    "url": "https://github.com/Lornatang/dsh-notion/issues"
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
   },
   "publishConfig": {
     "access": "public"

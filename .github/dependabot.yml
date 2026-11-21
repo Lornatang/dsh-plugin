@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directories:
+      - /packages/access/dsh-frontgate
+      - /packages/integrations/dsh-atlassian
+      - /packages/integrations/dsh-github
+      - /packages/integrations/dsh-notion
+      - /packages/security/dsh-codex-security
+      - /packages/security/dsh-security-audit
+      - /packages/workflow/dsh-caveman
+    schedule:
+      interval: weekly

@@ -79,11 +79,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lornatang/dsh-github.git"
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/integrations/dsh-github"
   },
-  "homepage": "https://github.com/Lornatang/dsh-github#readme",
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/integrations/dsh-github#readme",
   "bugs": {
-    "url": "https://github.com/Lornatang/dsh-github/issues"
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
   },
   "publishConfig": {
     "access": "public"

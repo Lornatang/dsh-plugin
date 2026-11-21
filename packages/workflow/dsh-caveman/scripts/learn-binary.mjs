@@ -41,7 +41,7 @@ export async function resolveLearnBinary(options = {}) {
   let handle
   let dispatcher
   try {
-    const url = `https://github.com/Lornatang/dsh-caveman/releases/download/v${version}/${expectedName}`
+    const url = `https://github.com/Lornatang/dsh-plugin/releases/download/dsh-caveman-v${version}/${expectedName}`
     let fetcher = options.fetcher ?? fetch
     if (!options.fetcher && (env.https_proxy || env.HTTPS_PROXY || env.http_proxy || env.HTTP_PROXY)) {
       const { EnvHttpProxyAgent, fetch: proxyFetch } = await import('undici')

@@ -34,8 +34,6 @@ dsh plugin --profile web add @lornatang/dsh-frontgate
 dsh plugin --profile web remove @lornatang/dsh-frontgate
 ```
 
-npm 仓库与 GitHub Release 均已发布 0.1.13。如需直接安装 GitHub 归档，请运行 `dsh plugin --profile web add https://github.com/Lornatang/dsh-frontgate/releases/download/v0.1.13/lornatang-dsh-frontgate-0.1.13.tgz`，或运行本版本的 `install.sh`。
-
 `add` 会把这一层组合进 profile：它的 `cordis.patch.yml` 中新增一条 insert 条目，row id 为 `frontgate`，其 `config` 以下面的回环默认值为起点。清单中没有 `dsh.bundle.patch` 声明的包会在这一步失败，而不是静默地什么都不挂载。安装后重启 DSH，再打开 <http://127.0.0.1:3090> 登录。
 
 如果既没有配置密码、也没有已保存的密码，首次启动会生成一个并打印一次：
@@ -177,7 +175,6 @@ ports:
 ## 延伸阅读
 
 - [CHANGELOG.md](CHANGELOG.md) — 版本历史与 0.1.x 升级说明。
-- [install.sh](install.sh) — 发布流程使用的一键安装脚本。
 - [DeepSeek Harness 配置目录](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/config-catalog.md) — 本层条目所遵循的 loader 语义。
 - [Apache-2.0 许可证](LICENSE)。
 

@@ -34,8 +34,6 @@ dsh plugin --profile web add @lornatang/dsh-frontgate
 dsh plugin --profile web remove @lornatang/dsh-frontgate
 ```
 
-The npm registry and the GitHub release both carry 0.1.13. To install the GitHub archive directly, use `dsh plugin --profile web add https://github.com/Lornatang/dsh-frontgate/releases/download/v0.1.13/lornatang-dsh-frontgate-0.1.13.tgz` or run `install.sh` from this release.
-
 The `add` command composes the layer into the profile: its `cordis.patch.yml` gains an insert entry, row id `frontgate`, whose `config` starts from the loopback defaults below. A package whose manifest omits the `dsh.bundle.patch` declaration fails this step instead of silently mounting nothing. Restart DSH after installing, then open <http://127.0.0.1:3090> and sign in.
 
 With no configured and no saved password, the first start generates one and logs it once:
@@ -177,7 +175,6 @@ The state file keeps the password hash, the cookie signing secret, and the revoc
 ## Further Exploration
 
 - [CHANGELOG.md](CHANGELOG.md) — release history and the 0.1.x upgrade notes.
-- [install.sh](install.sh) — the one-command install helper used by the release workflow.
 - [DeepSeek Harness configuration catalog](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/config-catalog.md) — the loader semantics this layer's row obeys.
 - [Apache-2.0 license](LICENSE).
 

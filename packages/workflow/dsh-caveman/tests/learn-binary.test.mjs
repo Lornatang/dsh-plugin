@@ -16,7 +16,7 @@ test('the analyzer download is verified, cached, and repaired after modification
   let downloads = 0
   const fetcher = async url => {
     downloads++
-    assert.equal(url, `https://github.com/Lornatang/dsh-caveman/releases/download/v${version}/dsh-caveman-learn_linux_amd64`)
+    assert.equal(url, `https://github.com/Lornatang/dsh-plugin/releases/download/dsh-caveman-v${version}/dsh-caveman-learn_linux_amd64`)
     return new Response(bytes)
   }
   try {

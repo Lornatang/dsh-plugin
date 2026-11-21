@@ -68,11 +68,12 @@
   "author": "Lornatang",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lornatang/dsh-frontgate.git"
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/access/dsh-frontgate"
   },
-  "homepage": "https://github.com/Lornatang/dsh-frontgate#readme",
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/access/dsh-frontgate#readme",
   "bugs": {
-    "url": "https://github.com/Lornatang/dsh-frontgate/issues"
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
   },
   "publishConfig": {
     "access": "public"

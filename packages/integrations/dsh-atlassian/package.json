@@ -84,11 +84,12 @@
   "author": "Lornatang",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lornatang/dsh-atlassian.git"
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/integrations/dsh-atlassian"
   },
-  "homepage": "https://github.com/Lornatang/dsh-atlassian#readme",
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/integrations/dsh-atlassian#readme",
   "bugs": {
-    "url": "https://github.com/Lornatang/dsh-atlassian/issues"
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
   },
   "publishConfig": {
     "access": "public"
