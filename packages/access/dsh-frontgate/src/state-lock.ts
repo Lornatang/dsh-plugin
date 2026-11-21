@@ -4,24 +4,27 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { tightenState } from './state.ts'
 
-/**
- * SQLite's OS lock is released by the kernel when the process exits. The
- * database is only a lock, not a replacement for the existing JSON state.
- * Use a local filesystem with working SQLite file locking for shared profiles.
- */
-export function acquireStateLock(statePath: string): () => void {
-  const lockPath = statePath + '.lock.sqlite'
-  mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 })
+/** Create or open a regular per-profile SQLite file with private POSIX permissions. */
+export function openProfileDatabase(path: string): DatabaseSync {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   try {
     // Do not open an existing lock file outside SQLite: on POSIX, closing a
     // separate descriptor can release this process's advisory file locks.
-    const fd = openSync(lockPath, 'wx', 0o600)
+    const fd = openSync(path, 'wx', 0o600)
     closeSync(fd)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
   }
-  tightenState(lockPath)
-  const database = new DatabaseSync(lockPath)
+  tightenState(path)
+  return new DatabaseSync(path)
+}
+
+/**
+ * SQLite releases this dedicated database's OS lock when the process exits.
+ * Use a local filesystem with working SQLite file locking for shared profiles.
+ */
+export function acquireStateLock(statePath: string): () => void {
+  const database = openProfileDatabase(statePath + '.lock.sqlite')
   try {
     database.exec('PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE')
   } catch (err) {

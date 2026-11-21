@@ -7,7 +7,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
-  COOKIE, clearCookie, sessionCookie, signToken, verifyPassword,
+  COOKIE, clearCookie, sessionCookie, verifyPassword,
 } from './auth.ts'
 import {
   MAX_FORM, clientIp, cookieValue, hostMatchesPublicOrigin, html, json, readForm, redirect, safeNext,
@@ -25,8 +25,6 @@ const CHECK_CONCURRENCY = 2
 export interface GateRuntime {
   title: string
   passwordHash: string
-  secret: string
-  pv: string
   sessionSeconds: number
   maxAttempts: number
   maxPendingLoginsPerIp: number
@@ -41,6 +39,7 @@ export interface GateRuntime {
 export interface GateOptions {
   runtime: GateRuntime
   harnessCookie(): Promise<string>
+  issueSession(): string | undefined
   validSession(token: string): boolean
   revokeSession(token: string): boolean
   admit(req: IncomingMessage, res: ServerResponse, token: string): boolean
@@ -56,8 +55,8 @@ interface Failure {
 
 /** Build the request handler for one gate instance. */
 export function createHandler(options: GateOptions): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { runtime, harnessCookie, validSession, revokeSession, forward, log } = options
-  const { title, passwordHash, secret, pv, sessionSeconds, maxAttempts, maxPendingLoginsPerIp, lockMs, trustProxy, useTls, publicOrigin, secureCookie } = runtime
+  const { runtime, harnessCookie, issueSession, validSession, revokeSession, forward, log } = options
+  const { title, passwordHash, sessionSeconds, maxAttempts, maxPendingLoginsPerIp, lockMs, trustProxy, useTls, publicOrigin, secureCookie } = runtime
 
   // Login throttling: per-client lockout plus a global scrypt slot limit.
   const failures = new Map<string, Failure>()
@@ -190,8 +189,15 @@ export function createHandler(options: GateOptions): (req: IncomingMessage, res:
         return html(res, 401, loginPage(title, next, 'Wrong password.'))
       }
       failures.delete(ip)
+      if (res.destroyed) return
+      let token: string | undefined
+      try { token = issueSession() } catch (err) {
+        log.warn('could not start session: ' + (err as Error).message)
+        return text(res, 503, 'could not start session; retry later\n')
+      }
+      if (!token) return text(res, 429, 'session limit reached; sign out of another session and retry\n')
       log.info('login from ' + ip)
-      res.setHeader('set-cookie', sessionCookie(signToken(secret, pv, sessionSeconds), sessionSeconds, secureCookie))
+      res.setHeader('set-cookie', sessionCookie(token, sessionSeconds, secureCookie))
       return redirect(res, next, 303)
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {

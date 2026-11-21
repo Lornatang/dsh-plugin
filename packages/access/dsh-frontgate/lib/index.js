@@ -56,7 +56,9 @@ var Config = z.object({
 // src/auth.ts
 import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 var COOKIE = "dsh_gate";
-var TOKEN_VERSION = "v1";
+var TOKEN_VERSION = "v2";
+var LEGACY_TOKEN_VERSION = "v1";
+var isLegacyToken = (token) => token.startsWith(LEGACY_TOKEN_VERSION + ".");
 var MAX_TOKEN_LENGTH = 256;
 var MIN_PASSWORD_LENGTH = 12;
 var SCRYPT = Object.freeze({ N: 32768, r: 8, p: 1, keylen: 32 });
@@ -145,12 +147,12 @@ function signToken(secret, pv, ttlSeconds) {
   const body = TOKEN_VERSION + "." + now + "." + (now + ttlSeconds) + "." + randomBytes(16).toString("base64url") + "." + pv;
   return body + "." + createHmac("sha256", secret).update(body).digest("base64url");
 }
-function verifyToken(secret, pv, token) {
+function verifyToken(secret, pv, token, expectedVersion = TOKEN_VERSION) {
   if (typeof token !== "string" || token.length > MAX_TOKEN_LENGTH) return false;
   const parts = token.split(".");
   if (parts.length !== 6) return false;
   const [version, iat, exp, nonce, tokenPv, mac] = parts;
-  if (version !== TOKEN_VERSION || tokenPv !== pv) return false;
+  if (version !== expectedVersion || tokenPv !== pv) return false;
   if (!/^[A-Za-z0-9_-]{22}$/.test(nonce) || !/^[A-Za-z0-9_-]{43}$/.test(mac)) return false;
   const now = Math.floor(Date.now() / 1e3);
   const issued = Number(iat);
@@ -758,8 +760,8 @@ function loginPage(title, next, error) {
 var MAX_TRACKED_CLIENTS = 1024;
 var CHECK_CONCURRENCY = 2;
 function createHandler(options) {
-  const { runtime, harnessCookie, validSession, revokeSession, forward, log } = options;
-  const { title, passwordHash, secret, pv, sessionSeconds, maxAttempts, maxPendingLoginsPerIp, lockMs, trustProxy, useTls, publicOrigin, secureCookie } = runtime;
+  const { runtime, harnessCookie, issueSession, validSession, revokeSession, forward, log } = options;
+  const { title, passwordHash, sessionSeconds, maxAttempts, maxPendingLoginsPerIp, lockMs, trustProxy, useTls, publicOrigin, secureCookie } = runtime;
   const failures = /* @__PURE__ */ new Map();
   const clientsInFlight = /* @__PURE__ */ new Set();
   const pendingForms = /* @__PURE__ */ new Map();
@@ -878,8 +880,17 @@ function createHandler(options) {
         return html(res, 401, loginPage(title, next, "Wrong password."));
       }
       failures.delete(ip);
+      if (res.destroyed) return;
+      let token;
+      try {
+        token = issueSession();
+      } catch (err) {
+        log.warn("could not start session: " + err.message);
+        return text(res, 503, "could not start session; retry later\n");
+      }
+      if (!token) return text(res, 429, "session limit reached; sign out of another session and retry\n");
       log.info("login from " + ip);
-      res.setHeader("set-cookie", sessionCookie(signToken(secret, pv, sessionSeconds), sessionSeconds, secureCookie));
+      res.setHeader("set-cookie", sessionCookie(token, sessionSeconds, secureCookie));
       return redirect(res, next, 303);
     }
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -970,7 +981,7 @@ function mergeRevocation(entries, entry, now) {
 function revocationRecords(entries) {
   return Array.from(entries, ([digest, expires]) => ({ digest, expires }));
 }
-function readState(path, mustExist = false, now = Math.floor(Date.now() / 1e3)) {
+function readState(path, mustExist = false, now = Math.floor(Date.now() / 1e3), includeRevocations = true) {
   let data;
   try {
     data = readFileSync(path, "utf8");
@@ -985,12 +996,15 @@ function readState(path, mustExist = false, now = Math.floor(Date.now() / 1e3)) 
     if (!validPasswordHash(state.passwordHash) || typeof state.secret !== "string" || state.secret.length < 64) {
       throw new Error("invalid credentials");
     }
-    if (state.sessionEpoch !== void 0 && (typeof state.sessionEpoch !== "string" || !/^[A-Za-z0-9_-]{16,43}$/.test(state.sessionEpoch))) {
-      throw new Error("invalid session epoch");
+    for (const epoch of [state.sessionEpoch, state.managedSessionEpoch]) {
+      if (epoch !== void 0 && (typeof epoch !== "string" || !/^[A-Za-z0-9_-]{16,43}$/.test(epoch))) {
+        throw new Error("invalid session epoch");
+      }
     }
     if (state.revokedSessions !== void 0 && !Array.isArray(state.revokedSessions)) {
       throw new Error("invalid revoked sessions");
     }
+    if (!includeRevocations) return state;
     const merged = /* @__PURE__ */ new Map();
     for (const entry of state.revokedSessions ?? []) mergeRevocation(merged, entry, now);
     let journal = "";
@@ -1190,17 +1204,19 @@ function hashFor(plain, state) {
 import { closeSync as closeSync2, mkdirSync as mkdirSync2, openSync as openSync2 } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-function acquireStateLock(statePath) {
-  const lockPath = statePath + ".lock.sqlite";
-  mkdirSync2(dirname2(lockPath), { recursive: true, mode: 448 });
+function openProfileDatabase(path) {
+  mkdirSync2(dirname2(path), { recursive: true, mode: 448 });
   try {
-    const fd = openSync2(lockPath, "wx", 384);
+    const fd = openSync2(path, "wx", 384);
     closeSync2(fd);
   } catch (err) {
     if (err.code !== "EEXIST") throw err;
   }
-  tightenState(lockPath);
-  const database = new DatabaseSync(lockPath);
+  tightenState(path);
+  return new DatabaseSync(path);
+}
+function acquireStateLock(statePath) {
+  const database = openProfileDatabase(statePath + ".lock.sqlite");
   try {
     database.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE");
   } catch (err) {
@@ -1217,36 +1233,85 @@ function acquireStateLock(statePath) {
 
 // src/sessions.ts
 import { createHash } from "node:crypto";
+var MAX_ACTIVE_SESSIONS = 1e4;
+var nowSeconds = () => Math.floor(Date.now() / 1e3);
+var tokenExpiry = (token) => Number(token.split(".")[2]);
 var sessionDigest = (token) => createHash("sha256").update(token).digest("base64url");
-function createSessionStore(path, state, pv, onRevoke) {
+function createSessionRegistry(path, epoch) {
+  const database = openProfileDatabase(path + ".sessions.sqlite");
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        digest TEXT PRIMARY KEY, epoch TEXT NOT NULL, expires INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions (expires);
+    `);
+    database.prepare("DELETE FROM sessions WHERE epoch != ?").run(epoch);
+    const prune = database.prepare("DELETE FROM sessions WHERE expires <= ?");
+    const insert = database.prepare(`
+      INSERT INTO sessions (digest, epoch, expires)
+      SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM sessions) < ?
+    `);
+    const find = database.prepare("SELECT 1 FROM sessions WHERE digest = ? AND epoch = ? AND expires > ?");
+    const remove = database.prepare("DELETE FROM sessions WHERE digest = ? AND epoch = ?");
+    return {
+      issue(digest, expires, now) {
+        prune.run(now);
+        return insert.run(digest, epoch, expires, MAX_ACTIVE_SESSIONS).changes === 1;
+      },
+      has: (digest, now) => find.get(digest, epoch, now) !== void 0,
+      revoke: (digest) => remove.run(digest, epoch).changes === 1,
+      close: () => database.close()
+    };
+  } catch (err) {
+    database.close();
+    throw err;
+  }
+}
+function createSessionStore(path, state, ttlSeconds, onRevoke) {
   const secret = state.secret;
   const passwordHash = state.passwordHash;
+  const managedEpoch = state.managedSessionEpoch;
+  let legacyEpoch = state.sessionEpoch;
   let revoked = new Map((state.revokedSessions ?? []).map(({ digest, expires }) => [digest, expires]));
+  const registry = createSessionRegistry(path, managedEpoch);
+  function currentState(now, includeRevocations) {
+    if (!tightenState(path)) throw new Error("state file is missing");
+    const latest = readState(path, true, now, includeRevocations);
+    if (latest.secret !== secret || latest.passwordHash !== passwordHash || latest.managedSessionEpoch !== managedEpoch || latest.sessionEpoch !== legacyEpoch) {
+      throw new Error("state changed; restart the gate before changing sessions");
+    }
+    return latest;
+  }
+  const issue = () => {
+    const now = nowSeconds();
+    currentState(now, false);
+    const token = signToken(secret, managedEpoch, ttlSeconds);
+    return registry.issue(sessionDigest(token), tokenExpiry(token), now) ? token : void 0;
+  };
   const valid = (token) => {
-    if (!verifyToken(secret, pv, token)) return false;
+    if (!isLegacyToken(token)) {
+      return verifyToken(secret, managedEpoch, token) && registry.has(sessionDigest(token), nowSeconds());
+    }
+    if (!verifyToken(secret, legacyEpoch, token, LEGACY_TOKEN_VERSION)) return false;
     const digest = sessionDigest(token);
     const expires = revoked.get(digest);
     if (expires === void 0) return true;
-    if (expires * 1e3 > Date.now()) return false;
+    if (expires > nowSeconds()) return false;
     revoked.delete(digest);
     return true;
   };
-  const revoke = (token) => {
-    if (!valid(token)) return false;
-    if (!tightenState(path)) throw new Error("state file is missing");
-    const now = Math.floor(Date.now() / 1e3);
-    const latest = readState(path, true, now);
-    if (latest.secret !== secret || latest.passwordHash !== passwordHash || latest.sessionEpoch !== pv) {
-      throw new Error("state changed; restart the gate before signing out");
-    }
-    const next = new Map((latest.revokedSessions ?? []).map(({ digest: digest2, expires: expires2 }) => [digest2, expires2]));
-    for (const [digest2, expires2] of revoked) mergeRevocation(next, { digest: digest2, expires: expires2 }, now);
-    const digest = sessionDigest(token);
+  function revokeLegacy(digest, expires, now, latest) {
+    const next = new Map((latest.revokedSessions ?? []).map((entry2) => [entry2.digest, entry2.expires]));
+    for (const [key, expiry] of revoked) mergeRevocation(next, { digest: key, expires: expiry }, now);
     if (!next.has(digest) && next.size >= MAX_REVOKED_SESSIONS) {
-      throw new Error("revocation store is full");
+      const epoch = newSessionEpoch();
+      writeState(path, { ...latest, sessionEpoch: epoch, revokedSessions: revocationRecords(next) });
+      legacyEpoch = epoch;
+      revoked = next;
+      onRevoke(void 0);
+      return;
     }
-    const expires = Number(token.split(".")[2]);
-    if (expires <= now) return false;
     const entry = { digest, expires };
     if (!appendRevocation(path, entry)) {
       compactRevocations(path, latest, revocationRecords(next));
@@ -1255,9 +1320,24 @@ function createSessionStore(path, state, pv, onRevoke) {
     mergeRevocation(next, entry, now);
     revoked = next;
     onRevoke(digest);
+  }
+  const revoke = (token) => {
+    if (!valid(token)) return false;
+    const legacy = isLegacyToken(token);
+    const now = nowSeconds();
+    const expires = tokenExpiry(token);
+    if (expires <= now) return false;
+    const latest = currentState(now, legacy);
+    const digest = sessionDigest(token);
+    if (legacy) {
+      revokeLegacy(digest, expires, now, latest);
+      return true;
+    }
+    if (!registry.revoke(digest)) return false;
+    onRevoke(digest);
     return true;
   };
-  return { valid, revoke };
+  return { issue, valid, revoke, close: registry.close };
 }
 
 // src/index.ts
@@ -1266,14 +1346,26 @@ var inject = ["webServer", "connection"];
 function apply(ctx, config = {}) {
   const statePath = statePathFor(ctx.profileContext?.patchPath);
   const releaseStateLock = acquireStateLock(statePath);
+  let closeSessions;
+  const releaseProfile = () => {
+    const close = closeSessions;
+    closeSessions = void 0;
+    try {
+      close?.();
+    } finally {
+      releaseStateLock();
+    }
+  };
   try {
-    return start(ctx, config, statePath, releaseStateLock);
+    return start(ctx, config, statePath, releaseProfile, (close) => {
+      closeSessions = close;
+    });
   } catch (err) {
-    releaseStateLock();
+    releaseProfile();
     throw err;
   }
 }
-function start(ctx, config, statePath, releaseStateLock) {
+function start(ctx, config, statePath, releaseProfile, bindSessionCleanup) {
   const logger = resolveLogger();
   const cfg = { ...DEFAULTS, ...config };
   const listenHost = String(cfg.listenHost);
@@ -1323,14 +1415,16 @@ function start(ctx, config, statePath, releaseStateLock) {
   const passwordChanged = stateExists && state.passwordHash !== passwordHash;
   const secret = !passwordChanged && typeof state.secret === "string" && state.secret.length >= 64 ? state.secret : randomBytes3(32).toString("hex");
   const pv = !passwordChanged && typeof state.sessionEpoch === "string" ? state.sessionEpoch : newSessionEpoch();
+  const managedEpoch = !passwordChanged && typeof state.managedSessionEpoch === "string" ? state.managedSessionEpoch : newSessionEpoch();
   const persistedState = {
     passwordHash,
     secret,
     sessionEpoch: pv,
+    managedSessionEpoch: managedEpoch,
     createdAt: state.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
     revokedSessions: passwordChanged ? [] : state.revokedSessions ?? []
   };
-  if (state.passwordHash !== passwordHash || state.secret !== secret || state.sessionEpoch !== pv) {
+  if (state.passwordHash !== passwordHash || state.secret !== secret || state.sessionEpoch !== pv || state.managedSessionEpoch !== managedEpoch) {
     writeState(statePath, persistedState);
     clearRevocationJournal(statePath);
   }
@@ -1346,9 +1440,12 @@ function start(ctx, config, statePath, releaseStateLock) {
   }
   const active = /* @__PURE__ */ new Map();
   const httpBySession = /* @__PURE__ */ new Map();
-  const sessions = createSessionStore(statePath, persistedState, pv, (digest) => {
-    for (const [connection, entry] of active) if (entry.digest === digest) connection.destroy();
+  const sessions = createSessionStore(statePath, persistedState, sessionSeconds, (digest) => {
+    for (const [connection, entry] of active) {
+      if (digest === void 0 ? entry.legacy : entry.digest === digest) connection.destroy();
+    }
   });
+  bindSessionCleanup(sessions.close);
   const proxy = createProxy({
     targetOrigin,
     publicProto,
@@ -1366,8 +1463,6 @@ function start(ctx, config, statePath, releaseStateLock) {
     runtime: {
       title: cfg.title,
       passwordHash,
-      secret,
-      pv,
       sessionSeconds,
       maxAttempts,
       maxPendingLoginsPerIp,
@@ -1378,6 +1473,7 @@ function start(ctx, config, statePath, releaseStateLock) {
       secureCookie: publicProto === "https"
     },
     harnessCookie: proxy.harnessCookie,
+    issueSession: sessions.issue,
     validSession: sessions.valid,
     revokeSession: sessions.revoke,
     admit: (req, res, token) => {
@@ -1432,7 +1528,7 @@ function start(ctx, config, statePath, releaseStateLock) {
   function track(connection, token) {
     if (connection.destroyed) return false;
     const expiresAt = Number(token.split(".")[2]) * 1e3;
-    const entry = { digest: sessionDigest(token) };
+    const entry = { digest: sessionDigest(token), legacy: isLegacyToken(token) };
     active.set(connection, entry);
     const arm = () => {
       const remaining = expiresAt - Date.now();
@@ -1513,7 +1609,7 @@ function start(ctx, config, statePath, releaseStateLock) {
     const withConnections = server;
     if (typeof withConnections.closeAllConnections === "function") withConnections.closeAllConnections();
     server.close();
-    releaseStateLock();
+    releaseProfile();
   };
   ctx.effect(() => ctx.webServer.tapIndex(injectPolyfill), "dsh-frontgate: secure-context polyfill");
   let ready;

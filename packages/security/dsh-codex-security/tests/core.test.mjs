@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply, loadBundledSkills, SecurityService } from '../lib/index.js'
-import { handleRequest } from '../lib/routes.js'
+import { bindRoutes, handleRequest } from '../lib/routes.js'
 import { normalizeFinding, normalizeAnchor, policyGate, toSarif } from '../lib/contracts.js'
 import { SKILL_NAMES, TOOL_NAMES } from '../lib/constants.js'
 import { ScanStore } from '../lib/store.js'
@@ -273,6 +273,65 @@ test('routes expose status, scan list and sealed artifacts', async () => {
     await rm(target, { recursive: true, force: true })
     await rm(stateDir, { recursive: true, force: true })
   }
+})
+
+test('registered report routes use the current DSH connection admission', async () => {
+  let connection
+  let route
+  const server = {
+    register(value) {
+      route = value
+      return () => { route = undefined }
+    },
+  }
+  const ctx = { get: name => name === 'webServer' ? server : name === 'connection' ? connection : undefined }
+  let calls = 0
+  const service = {
+    async listScans() { calls++; return { ok: true, total: 0 } },
+    async exportContent() { calls++; return { content: 'report', mediaType: 'text/plain', filename: 'report.txt' } },
+    async setFindingTriage() { calls++; return { ok: true } },
+  }
+  const dispose = bindRoutes(ctx, service)
+  const scan = 'cs_' + 'a'.repeat(24)
+  const requests = [
+    ['GET', '/scans'],
+    ['GET', '/export/' + scan],
+    ['POST', '/scans/' + scan + '/triage'],
+  ]
+  const invoke = async ([method, path], peer) => {
+    const req = {
+      method,
+      url: route.path + path,
+      headers: { 'content-type': 'application/json' },
+      async *[Symbol.asyncIterator]() { yield Buffer.from('{}') },
+    }
+    const res = { statusCode: 0, setHeader() {}, end() {} }
+    await route.handler(req, res, peer)
+    return res.statusCode
+  }
+  try {
+    assert.equal(route.auth, 'required')
+    for (const request of requests) assert.equal(await invoke(request), 503)
+    connection = { requestRejection: () => 401 }
+    for (const request of requests) assert.equal(await invoke(request), 401)
+    connection = { requestRejection: () => 403 }
+    for (const request of requests) assert.equal(await invoke(request), 403)
+    assert.equal(calls, 0)
+    connection = { requestRejection: () => undefined }
+    for (const request of requests) assert.equal(await invoke(request), 200)
+    assert.equal(calls, 3)
+    connection = undefined
+    assert.equal(await invoke(requests[0]), 503)
+    assert.equal(calls, 3)
+    const admitted = new AbortController()
+    assert.equal(await invoke(requests[0], { signal: admitted.signal }), 200)
+    admitted.abort()
+    assert.equal(await invoke(requests[0], { signal: admitted.signal }), 401)
+    assert.equal(calls, 4)
+  } finally {
+    dispose()
+  }
+  assert.equal(route, undefined)
 })
 
 test('store recovers scans from disk when the index is missing', async () => {

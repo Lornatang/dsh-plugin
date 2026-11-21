@@ -12,6 +12,62 @@ import { SessionStore } from '../lib/store.js'
 import { startMockMcp } from './mock-mcp.mjs'
 
 const logger = { info() {}, warn() {}, error() {} }
+
+async function startToolBridge(t, options) {
+  const mock = await startMockMcp(options)
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-atlassian-discovery-'))
+  const tools = new Map()
+  const bridge = new AtlassianBridge({ register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name) }, logger }, {
+    url: mock.url, store: new SessionStore(join(dir, 'session.json')), serverName: 'atlassian', redirectPort: 0,
+    expectedSite: '', toolCallTimeoutMs: 5000, authorizationTimeoutMs: 5000, autoOpenBrowser: false,
+  })
+  t.after(async () => {
+    await bridge.dispose()
+    await mock.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+  await bridge.start()
+  return { bridge, tools }
+}
+
+test('routes structured results from every discovery page through one validation boundary', async (t) => {
+  const issue = { name: 'getJiraIssue', inputSchema: { type: 'object' }, outputSchema: {
+    type: 'object', properties: { key: { type: 'string' } }, required: ['key'],
+  } }
+  const resources = { name: 'getAccessibleAtlassianResources', inputSchema: { type: 'object' }, outputSchema: {
+    type: 'object', properties: { ids: { type: 'array' } }, required: ['ids'],
+  } }
+  const { bridge, tools } = await startToolBridge(t, {
+    toolPages: [[issue, resources], [{ name: 'searchJiraIssuesUsingJql', inputSchema: { type: 'object' } }]],
+    structuredResults: { getJiraIssue: { key: 'DEMO-1' }, getAccessibleAtlassianResources: { ids: ['mock-cloud-id'] } },
+  })
+  assert.equal(bridge.snapshot().status, 'ready')
+  assert.equal(bridge.snapshot().site, 'example.atlassian.net')
+  const result = await tools.get('mcp__atlassian__getJiraIssue').execute({}, {})
+  assert.deepEqual(result.content, await bridge.callTool('getJiraIssue', {}))
+})
+
+test('reported structured output must match its schema before consumers receive it', async (t) => {
+  const { bridge, tools } = await startToolBridge(t, {
+    toolPages: [[{ name: 'getJiraIssue', inputSchema: { type: 'object' }, outputSchema: {
+      type: 'object', properties: { key: { type: 'string' } }, required: ['key'],
+    } }], [{ name: 'getAccessibleAtlassianResources', inputSchema: { type: 'object' } }]],
+    structuredResults: { getJiraIssue: { key: 1 } },
+  })
+  await assert.rejects(bridge.callTool('getJiraIssue', {}), /does not match its schema/)
+  await assert.rejects(tools.get('mcp__atlassian__getJiraIssue').execute({}, {}), /does not match its schema/)
+})
+
+for (const singleTool of [true, false]) test(`applies the ${singleTool ? 'single-tool' : 'total discovery'} byte budget before registering tools`, async (t) => {
+  const description = 'a'.repeat((singleTool ? 512 : 384) * 1024)
+  const createTool = (i) => ({ name: `tool${i}`, description, inputSchema: { type: 'object' } })
+  const toolPages = singleTool ? [[createTool(0)]] : Array.from({ length: 3 }, (_, i) => Array.from({ length: 8 }, (_, j) => createTool(i * 8 + j)))
+  const { bridge, tools } = await startToolBridge(t, { toolPages })
+  assert.equal(bridge.snapshot().status, 'error')
+  assert.match(bridge.snapshot().error, singleTool ? /tool definition exceeds the byte limit/ : /discovery exceeds the total byte limit/)
+  assert.equal(tools.size, 0)
+})
+
 async function waitFor(predicate) {
   for (let i = 0; i < 100; i++) { if (predicate()) return; await delay(25) }
   throw new Error('bridge did not become ready')

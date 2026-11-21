@@ -31,8 +31,8 @@ export declare function nativePrompt(prompt: string): {
         continuation: boolean;
     };
 };
-/** Name the same per-install socket as the local runtime. */
-export declare function nativeSocketPath(home: string, platform?: NodeJS.Platform): string;
+/** Return the supported local socket endpoint, if available on this platform. */
+export declare function nativeSocketPath(home: string, platform?: NodeJS.Platform): string | undefined;
 export declare function nativeCall(home: string, request: object, signal?: AbortSignal): Promise<NativeResponse | undefined>;
 /** Add dynamic native task context when the verified local runtime is running. */
 export declare function registerNative(ctx: Context, endpoint: string, policy: {

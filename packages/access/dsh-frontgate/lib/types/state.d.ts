@@ -8,8 +8,10 @@ export interface RevokedSession {
 export interface State {
     passwordHash?: string;
     secret?: string;
-    /** Random tag bound into signed sessions; changes with the password. */
+    /** Signing epoch for session cookies issued before sessions were tracked. */
     sessionEpoch?: string;
+    /** Signing epoch for sessions in the active-session database. */
+    managedSessionEpoch?: string;
     createdAt?: string;
     revokedSessions?: RevokedSession[];
 }
@@ -19,7 +21,7 @@ export declare const MAX_REVOCATION_JOURNAL_BYTES: number;
 export declare function mergeRevocation(entries: Map<string, number>, entry: unknown, now: number): void;
 export declare function revocationRecords(entries: ReadonlyMap<string, number>): RevokedSession[];
 /** Read existing state without replacing malformed or inaccessible credentials. */
-export declare function readState(path: string, mustExist?: boolean, now?: number): State;
+export declare function readState(path: string, mustExist?: boolean, now?: number, includeRevocations?: boolean): State;
 /** Fail closed when a state file is a symlink or cannot be made owner-only. */
 export declare function tightenState(path: string): boolean;
 /** Write a complete owner-only temporary file, then replace the old state. */

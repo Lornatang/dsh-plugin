@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 
-export async function startMockMcp({ initializeDelay = 0, resourceDelay = 0, oauth = false, tokenEndpoint, rotateRefresh = false, refreshDelay = 0, staleUnauthorizedDelay = 0, refreshErrorOnce = false, dropRefreshResponse = false, clientSecretBasic = false, serverEvents = false, strictRedirect = false, failToolListOnce = false, resourceText } = {}) {
+export async function startMockMcp({ initializeDelay = 0, resourceDelay = 0, oauth = false, tokenEndpoint, rotateRefresh = false, refreshDelay = 0, staleUnauthorizedDelay = 0, refreshErrorOnce = false, dropRefreshResponse = false, clientSecretBasic = false, serverEvents = false, strictRedirect = false, failToolListOnce = false, resourceText, toolPages, structuredResults } = {}) {
   const calls = []
   let origin
   let challenge
@@ -89,7 +89,11 @@ export async function startMockMcp({ initializeDelay = 0, resourceDelay = 0, oau
         failToolListOnce = false
         json({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Tool list temporarily unavailable' } }); return
       }
-      result = { tools: definitions }
+      if (toolPages) {
+        const index = Number(message.params?.cursor ?? 0)
+        const nextCursor = index + 1 < toolPages.length ? String(index + 1) : undefined
+        result = { tools: toolPages[index], nextCursor }
+      } else result = { tools: definitions }
     }
     else if (message.method === 'tools/call') {
       let value
@@ -100,7 +104,7 @@ export async function startMockMcp({ initializeDelay = 0, resourceDelay = 0, oau
       else if (message.params.name === 'searchJiraIssuesUsingJql') value = { issues: [{ id: '1', key: 'DEMO-1', fields: { summary: 'Mock issue', project: { key: 'DEMO', name: 'Demo' }, status: { name: 'To Do', statusCategory: { key: 'new', name: 'To Do' } } } }], isLast: true }
       else value = { key: 'DEMO-1', fields: { summary: 'Mock issue' } }
       const text = message.params.name === 'getAccessibleAtlassianResources' && resourceText !== undefined ? resourceText : JSON.stringify(value)
-      result = { content: [{ type: 'text', text }] }
+      result = { content: [{ type: 'text', text }], structuredContent: structuredResults?.[message.params.name] }
     } else { res.writeHead(400).end(); return }
     if (!res.destroyed) res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
   })

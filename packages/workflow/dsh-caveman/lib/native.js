@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath, stat } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
-import { join, resolve, win32 } from 'node:path';
+import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
@@ -49,14 +49,11 @@ export function nativePrompt(prompt) {
     const bytes = Buffer.from(prompt, 'utf8');
     return { prompt: { bytes: bytes.length, sha256: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }, task_profile: { type, terms: [...seen], continuation } };
 }
-/** Name the same per-install socket as the local runtime. */
+/** Return the supported local socket endpoint, if available on this platform. */
 export function nativeSocketPath(home, platform = process.platform) {
-    if (platform !== 'win32')
-        return join(home, 'run', 'native.sock');
-    let folded = '';
-    for (const char of win32.resolve(home))
-        folded += String.fromCodePoint(char.toLowerCase().codePointAt(0));
-    return `\\\\.\\pipe\\caveman-native-${createHash('sha256').update(folded).digest('hex').slice(0, 16)}`;
+    // The current Windows runtime has no pipe peer proof, and its HTTP health
+    // check only verifies the HTTP listener. Keep native events local to DSH.
+    return platform === 'win32' ? undefined : join(home, 'run', 'native.sock');
 }
 function validResponse(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -78,8 +75,6 @@ function validResponse(value) {
 }
 /** Refuse a replaced socket path before sending prompt terms or tool data over it. */
 async function socketTrust(path) {
-    if (process.platform === 'win32')
-        return 'trusted';
     try {
         const info = await lstat(path);
         if (!info.isSocket())
@@ -98,7 +93,7 @@ export async function nativeCall(home, request, signal) {
     if (signal?.aborted)
         return undefined;
     const socketPath = nativeSocketPath(home);
-    if (await socketTrust(socketPath) === 'untrusted')
+    if (!socketPath || await socketTrust(socketPath) === 'untrusted')
         return undefined;
     const payload = Buffer.from(JSON.stringify(request) + '\n');
     if (payload.length > 2 * 1024 * 1024)
@@ -223,11 +218,13 @@ async function runtimeInstance(endpoint, home, signal) {
 }
 /** Add dynamic native task context when the verified local runtime is running. */
 export function registerNative(ctx, endpoint, policy) {
+    const home = process.env.CAVEMAN_HOME ?? join(homedir(), '.caveman');
+    if (!nativeSocketPath(home))
+        return;
     const sessions = new WeakMap();
     const owners = new WeakMap();
     const selections = new WeakMap();
     const pending = new Set();
-    const home = process.env.CAVEMAN_HOME ?? join(homedir(), '.caveman');
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
         const result = await next();
         if (context.agent && context.toolSet)

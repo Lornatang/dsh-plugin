@@ -31,7 +31,7 @@ import { parse as parseYaml } from 'yaml'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-test('Cavecrew presets load original personas and restrict each real DSH agent', async () => {
+test('Cavecrew presets load original personas and restrict each real DSH agent', { timeout: 30_000 }, async () => {
   const patch = parseYaml(await readFile(new URL('../presets/cavecrew.patch.yml', import.meta.url), 'utf8'))
   const entries = patch.flatMap(item => item.insert ?? [])
   const roles = ['investigator', 'builder', 'reviewer']
@@ -54,6 +54,9 @@ test('Cavecrew presets load original personas and restrict each real DSH agent',
   execFileSync('git', ['config', 'diff.external', 'nonexistent-external-diff'], { cwd: directory })
   execFileSync('git', ['config', 'core.fsmonitor', 'nonexistent-fsmonitor'], { cwd: directory })
   await writeFile(join(directory, 'fixture.txt'), 'needle updated\n')
+  for (const label of ['one', 'two', 'three']) {
+    await writeFile(join(directory, `builder-${label}.txt`), label + '\n')
+  }
   ctx.baseUrl = pathToFileURL(join(root, 'package.json')).href
   try {
     await ctx.plugin(Loader)
@@ -104,10 +107,50 @@ test('Cavecrew presets load original personas and restrict each real DSH agent',
       assert.ok(ctx.tools.checkGuards({ name: 'write', agent, arguments: {} }), `${role} denies file creation`)
       if (role !== 'builder') assert.ok(ctx.tools.checkGuards({ name: 'edit', agent, arguments: {} }), `${role} denies editing`)
       if (role === 'builder') {
-        const edit = file_path => ctx.tools.checkGuards({ name: 'edit', agent, arguments: { file_path } })
-        assert.equal(edit('one.txt'), undefined)
-        assert.equal(edit('two.txt'), undefined)
-        assert.match(edit('three.txt').reason, /two file paths/)
+        let editCount = 0
+        const edit = async (file_path, old_string, new_string) => {
+          const execution = await ctx.tools.execute({
+            agent, signal: new AbortController().signal,
+            calls: [{ type: 'tool-call', id: `builder-edit-${++editCount}`, name: 'edit',
+              arguments: JSON.stringify({ file_path, old_string, new_string }) }],
+          })
+          return execution.results[0].result
+        }
+        const first = await edit('builder-one.txt', 'one', 'first')
+        assert.equal(first.isError, false, JSON.stringify(first))
+        const alias = await edit(join(directory, 'builder-one.txt'), 'first', 'updated')
+        assert.equal(alias.isError, false, JSON.stringify(alias))
+        const reserved = Promise.withResolvers()
+        const resume = Promise.withResolvers()
+        const dispose = ctx.on('fs/edit-intent', async (_target, execution, next) => {
+          if (execution?.agent === agent && execution.arguments.new_string === 'pending edit') {
+            reserved.resolve()
+            await resume.promise
+          }
+          return next()
+        })
+        const invalid = edit('builder-two.txt', 'missing text', 'pending edit')
+        try {
+          assert.equal(await Promise.race([reserved.promise.then(() => true), invalid.then(() => false)]),
+            true, 'the alternate spelling leaves a free slot')
+          const concurrent = await edit('builder-two.txt', 'missing text', 'concurrent edit')
+          assert.equal(concurrent.isError, true)
+          assert.doesNotMatch(concurrent.error.message, /two file paths/, 'in-flight edits share their target slot')
+          const blocked = await edit('builder-three.txt', 'three', 'blocked')
+          assert.equal(blocked.isError, true)
+          assert.match(blocked.error.message, /two file paths/, 'one failure does not release a concurrent reservation')
+        } finally {
+          resume.resolve()
+          dispose()
+          assert.equal((await invalid).isError, true)
+        }
+        const third = await edit('builder-three.txt', 'three', 'third')
+        assert.equal(third.isError, false, 'an unsuccessful edit releases its temporary reservation')
+        assert.equal((await edit('builder-one.txt', 'missing text', 'ignored')).isError, true)
+        const overLimit = await edit('builder-two.txt', 'two', 'second')
+        assert.equal(overLimit.isError, true)
+        assert.match(overLimit.error.message, /two file paths/, 'a later failure preserves the committed slot')
+        assert.equal(await readFile(join(directory, 'builder-two.txt'), 'utf8'), 'two\n')
       }
       const denied = await ctx.tools.execute({
         agent, signal: new AbortController().signal,

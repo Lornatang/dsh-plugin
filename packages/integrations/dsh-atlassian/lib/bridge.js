@@ -7,7 +7,10 @@ import { AtlassianOAuthProvider, CallbackServer, RedirectRegistrationChanged, cr
 import { OAuthTokensSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { decodeToolJson, selectJiraResource } from './jira-resource.js';
 import { openInBrowser } from './open-url.js';
+import { deferredOutputValidation, validateOutput } from './output-validator.js';
 import { sameTokens } from './store.js';
+const MAX_DISCOVERY_BYTES = 8 * 1024 * 1024;
+const MAX_TOOL_BYTES = 512 * 1024;
 async function waitForFlight(flight, signal) {
     if (signal.aborted)
         throw new Error('atlassian: connection cancelled');
@@ -264,7 +267,7 @@ export class AtlassianBridge {
         // would reach an unbound callback listener and fail with an HTTP 400.
         return { status: this.#status, authorizationUrl: this.#waiting ? this.#url : undefined, site, siteMismatch: mismatch, toolCount: this.#tools.size, error: this.#error };
     }
-    rawNames() { return [...this.#tools.values()].map((value) => value.raw); }
+    rawNames() { return [...this.#tools.keys()]; }
     rawNameMatching(pattern) { return this.rawNames().find((name) => pattern.test(name)); }
     async start() {
         if (this.#boot)
@@ -352,7 +355,7 @@ export class AtlassianBridge {
         for (let attempt = 0; attempt < 2; attempt++) {
             check();
             this.#setStatus('connecting');
-            const client = new Client({ name: 'dsh-atlassian', version: '0.1.15' });
+            const client = new Client({ name: 'dsh-atlassian', version: '0.1.15' }, { jsonSchemaValidator: deferredOutputValidation });
             // Releasing the session lease here would race the SDK's saveTokens; an
             // exchange that is still in flight is released by its own finally block.
             client.onerror = () => { const operation = this.#operation.getStore(); if (operation?.exchangePending)
@@ -407,27 +410,42 @@ export class AtlassianBridge {
                 continue;
             }
             this.#client = client;
-            await this.#registerTools(client);
-            check();
-            await this.#readSite(client, generation, signal);
-            check();
-            this.#setUrl(undefined);
-            this.#setStatus('ready');
+            try {
+                await this.#registerTools(client, signal);
+                check();
+                await this.#readSite(client, generation, signal);
+                check();
+                this.#setUrl(undefined);
+                this.#setStatus('ready');
+            }
+            catch (error) {
+                this.#clearTools();
+                await this.#closeClient();
+                throw error;
+            }
             return;
         }
         throw new Error('Atlassian authorization did not establish a connection');
     }
-    async #registerTools(client) {
+    async #registerTools(client, signal) {
         const found = [];
         const seen = new Set();
         let cursor;
+        let bytes = 0;
         do {
             if (seen.size >= 100)
                 throw new Error('MCP server returned too many tool pages');
-            const page = await client.listTools(cursor ? { cursor } : {});
-            found.push(...page.tools);
-            if (found.length > 1000)
+            const page = await client.listTools(cursor ? { cursor } : {}, { signal, timeout: this.#options.toolCallTimeoutMs });
+            if (found.length + page.tools.length > 1000)
                 throw new Error('MCP server returned too many tools');
+            bytes += Buffer.byteLength(JSON.stringify(page), 'utf8');
+            if (bytes > MAX_DISCOVERY_BYTES)
+                throw new Error('MCP tool discovery exceeds the total byte limit');
+            for (const tool of page.tools) {
+                if (Buffer.byteLength(JSON.stringify(tool), 'utf8') > MAX_TOOL_BYTES)
+                    throw new Error('MCP tool definition exceeds the byte limit');
+                found.push(tool);
+            }
             cursor = page.nextCursor;
             if (cursor && seen.has(cursor))
                 throw new Error('MCP server repeated a continuation cursor');
@@ -441,29 +459,21 @@ export class AtlassianBridge {
                 throw new Error('MCP server returned duplicate tool names');
             names.add(name);
         }
-        this.#clearTools();
-        try {
-            for (const tool of found) {
-                const name = publicToolName(this.#options.serverName, tool.name);
-                const definition = {
-                    name, description: tool.description ?? '', parameters: tool.inputSchema,
-                    output: {
-                        schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
-                        render: (_args, result) => [{ type: 'text', text: display(result?.content) }],
-                    },
-                    execute: async (args, context) => {
-                        const result = await client.callTool({ name: tool.name, arguments: (typeof args === 'object' && args !== null ? args : {}) }, undefined, { timeout: this.#options.toolCallTimeoutMs, signal: context.signal });
-                        if (result.isError)
-                            throw new Error(display(result.content));
-                        return { content: result.content };
-                    },
-                };
-                this.#tools.set(name, { raw: tool.name, dispose: this.#host.register(definition) });
-            }
-        }
-        catch (error) {
-            this.#clearTools();
-            throw error;
+        for (const tool of found) {
+            const name = publicToolName(this.#options.serverName, tool.name);
+            const definition = {
+                name, description: tool.description ?? '', parameters: tool.inputSchema,
+                output: {
+                    schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
+                    render: (_args, result) => [{ type: 'text', text: display(result?.content) }],
+                },
+                execute: async (args, context) => {
+                    const combined = context.signal ? AbortSignal.any([signal, context.signal]) : signal;
+                    const input = (typeof args === 'object' && args !== null ? args : {});
+                    return { content: await this.#callTool(client, tool.name, input, this.#options.toolCallTimeoutMs, combined) };
+                },
+            };
+            this.#tools.set(tool.name, { outputSchema: tool.outputSchema, dispose: this.#host.register(definition) });
         }
     }
     async #readSite(client, generation, signal) {
@@ -471,10 +481,10 @@ export class AtlassianBridge {
         if (!name)
             return;
         try {
-            const result = await client.callTool({ name, arguments: {} }, undefined, { timeout: 20000, signal });
-            if (result.isError || signal.aborted)
+            const content = await this.#callTool(client, name, {}, 20_000, signal);
+            if (signal.aborted)
                 return;
-            const site = selectJiraResource(decodeToolJson(result.content), (url) => this.allowsHttpResource(url));
+            const site = selectJiraResource(decodeToolJson(content), (url) => this.allowsHttpResource(url));
             if (!site)
                 return;
             this.#resource = { epoch: generation, ...site };
@@ -485,9 +495,22 @@ export class AtlassianBridge {
     async callTool(rawName, args, timeoutMs) {
         if (!this.#client || this.#status !== 'ready')
             throw new Error('Atlassian is not connected');
-        const result = await this.#client.callTool({ name: rawName, arguments: args }, undefined, { timeout: timeoutMs ?? this.#options.toolCallTimeoutMs });
+        return this.#callTool(this.#client, rawName, args, timeoutMs ?? this.#options.toolCallTimeoutMs, this.#controller.signal);
+    }
+    async #callTool(client, name, args, timeout, signal) {
+        signal.throwIfAborted();
+        const tool = this.#tools.get(name);
+        if (!tool)
+            throw new Error(`Atlassian MCP tool ${name} was not discovered`);
+        const result = await client.callTool({ name, arguments: args }, undefined, { timeout, signal });
         if (result.isError)
             throw new Error(display(result.content));
+        if (tool.outputSchema) {
+            if (result.structuredContent === undefined)
+                throw new Error(`Atlassian MCP tool ${name} did not return structured output`);
+            await validateOutput(tool.outputSchema, result.structuredContent, timeout, signal);
+        }
+        signal.throwIfAborted();
         return Array.isArray(result.content) ? result.content : [];
     }
     async disconnect() {

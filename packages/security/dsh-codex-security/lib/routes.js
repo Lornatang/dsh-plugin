@@ -143,12 +143,33 @@ export function bindRoutes(ctx, service) {
     let disposeRoute;
     const register = () => {
         const server = (ctx.get?.('webServer') ?? ctx.get?.('httpServer'));
+        disposeRoute?.();
+        disposeRoute = undefined;
         if (!server)
             return;
-        disposeRoute?.();
-        disposeRoute = server.register({ kind: 'prefix', path: ROUTE_PREFIX, handler: (req, res) => handleRequest(service, req, res) });
+        disposeRoute = server.register({ kind: 'prefix', path: ROUTE_PREFIX, auth: 'required', handler: (req, res, peer) => {
+                // New hosts supply an admitted peer. Older hosts delegate admission to
+                // the plugin and call the handler with only the Node request and response.
+                if (peer) {
+                    if (peer.signal.aborted)
+                        return sendJson(res, 401, { ok: false, error: 'unauthorized' });
+                    return handleRequest(service, req, res);
+                }
+                const connection = ctx.get?.('connection');
+                if (typeof connection?.requestRejection !== 'function') {
+                    return sendJson(res, 503, { ok: false, error: 'DSH connection service is unavailable' });
+                }
+                const rejection = connection.requestRejection(req);
+                if (rejection !== undefined) {
+                    return sendJson(res, rejection, { ok: false, error: rejection === 401 ? 'unauthorized' : 'forbidden' });
+                }
+                return handleRequest(service, req, res);
+            } });
     };
     register();
-    const off = ctx.on?.('internal/service', () => { register(); });
+    const off = ctx.on?.('internal/service', name => {
+        if (!name || name === 'webServer' || name === 'httpServer')
+            register();
+    });
     return () => { off?.(); disposeRoute?.(); disposeRoute = undefined; };
 }

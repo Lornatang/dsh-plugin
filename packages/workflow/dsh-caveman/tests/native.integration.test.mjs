@@ -36,7 +36,7 @@ import * as plugin from '../lib/index.js'
 const binary = process.env.CAVEMAN_PROXY_BINARY
 const mcpBinary = process.env.CAVEMAN_MCP_BINARY
 
-test('the local native runtime contributes a task contract to a DSH session', { skip: !binary }, async () => {
+test('the local native runtime contributes a task contract to a DSH session', { skip: !binary || process.platform === 'win32' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-caveman-native-'))
   const previous = process.env.CAVEMAN_HOME
   const probe = createServer()

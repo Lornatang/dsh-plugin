@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { lstat, open, realpath, stat } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
-import { join, resolve, win32 } from 'node:path'
+import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
@@ -63,12 +63,11 @@ export function nativePrompt(prompt: string): { prompt: { bytes: number; sha256:
   return { prompt: { bytes: bytes.length, sha256: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }, task_profile: { type, terms: [...seen], continuation } }
 }
 
-/** Name the same per-install socket as the local runtime. */
-export function nativeSocketPath(home: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform !== 'win32') return join(home, 'run', 'native.sock')
-  let folded = ''
-  for (const char of win32.resolve(home)) folded += String.fromCodePoint(char.toLowerCase().codePointAt(0)!)
-  return `\\\\.\\pipe\\caveman-native-${createHash('sha256').update(folded).digest('hex').slice(0, 16)}`
+/** Return the supported local socket endpoint, if available on this platform. */
+export function nativeSocketPath(home: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  // The current Windows runtime has no pipe peer proof, and its HTTP health
+  // check only verifies the HTTP listener. Keep native events local to DSH.
+  return platform === 'win32' ? undefined : join(home, 'run', 'native.sock')
 }
 
 function validResponse(value: unknown): value is NativeResponse {
@@ -87,7 +86,6 @@ function validResponse(value: unknown): value is NativeResponse {
 
 /** Refuse a replaced socket path before sending prompt terms or tool data over it. */
 async function socketTrust(path: string): Promise<'trusted' | 'missing' | 'untrusted'> {
-  if (process.platform === 'win32') return 'trusted'
   try {
     const info = await lstat(path)
     if (!info.isSocket()) return 'untrusted'
@@ -103,7 +101,7 @@ async function socketTrust(path: string): Promise<'trusted' | 'missing' | 'untru
 export async function nativeCall(home: string, request: object, signal?: AbortSignal): Promise<NativeResponse | undefined> {
   if (signal?.aborted) return undefined
   const socketPath = nativeSocketPath(home)
-  if (await socketTrust(socketPath) === 'untrusted') return undefined
+  if (!socketPath || await socketTrust(socketPath) === 'untrusted') return undefined
   const payload = Buffer.from(JSON.stringify(request) + '\n')
   if (payload.length > 2 * 1024 * 1024) return undefined
   const attempt = () => new Promise<{ response?: NativeResponse; retry: boolean }>(resolveResponse => {
@@ -198,12 +196,13 @@ async function runtimeInstance(endpoint: string, home: string, signal?: AbortSig
 
 /** Add dynamic native task context when the verified local runtime is running. */
 export function registerNative(ctx: Context, endpoint: string, policy: { mode: PolicyMode; profile: string; core: boolean }): void {
+  const home = process.env.CAVEMAN_HOME ?? join(homedir(), '.caveman')
+  if (!nativeSocketPath(home)) return
   interface SessionState { instance: string; session: { caveman_session_id: string; host_session_id: string; cwd: string; parent_session_id?: string }; specialized: boolean; confirmed: boolean; queue?: Promise<void>; contexts: string[] }
   const sessions = new WeakMap<Agent, SessionState>()
   const owners = new WeakMap<Session, Agent>()
   const selections = new WeakMap<Agent, ResolvedToolSet>()
   const pending = new Set<Promise<unknown>>()
-  const home = process.env.CAVEMAN_HOME ?? join(homedir(), '.caveman')
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const result = await next()
     if (context.agent && context.toolSet) selections.set(context.agent, context.toolSet)

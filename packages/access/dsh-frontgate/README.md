@@ -97,6 +97,8 @@ After `maxAttempts` failed logins a client IP is locked out for `lockMinutes`, a
 
 A session lasts `sessionDays` regardless of activity. The cookie is `dsh_gate`, `HttpOnly`, `SameSite=Lax`, and `Secure` whenever the public origin is HTTPS. `/__gate/logout` revokes the session, closes its HTTP streams and WebSockets, and asks the browser to clear cached content with `Clear-Site-Data`; other sessions stay connected. Revocations persist across restarts.
 
+Frontgate allows up to 10,000 active new sessions per profile. When that limit is reached, new logins receive 429 until a session expires or signs out. Cookies issued before this upgrade still work. If the legacy revocation list is full at logout, Frontgate signs out all remaining legacy sessions together.
+
 State lives in `$DSH_HOME/profiles/<name>/data/dsh-frontgate.json`. On POSIX systems its permissions are tightened to `0600`; on Windows, restrict access to the profile data directory with Windows ACLs. One live gate per profile is enforced by an OS-backed SQLite lock in the same directory, released automatically on process exit, including a crash; therefore the data directory must support SQLite locking and the lock file must not be removed or replaced while the gate runs. The Node.js built-in `node:sqlite` module must be enabled, which is why the package requires Node.js 22.19 or newer.
 
 ### Remote access
@@ -152,7 +154,7 @@ The gate serves `/__gate/login`, `/__gate/logout`, and `/__gate/health` itself, 
 
 The proxy drops hop-by-hop and browser headers, rewrites `Host` and `Origin` to the harness origin, and exchanges the launch cookie on the server side so the browser never sees it; the exchanged cookie is reused for 25 minutes. WebSocket upgrades are spliced at the TCP level after the handshake deadline passes. A connection counter bounds admission before requests reach the harness queue.
 
-The state file keeps the password hash, the cookie signing secret, and the revocation list; it is written `0600` and rewritten when the password changes. The SQLite lock file next to it admits one gate per profile and is released on exit.
+The state file keeps the password hash, cookie signing secret, and legacy revocations. It is written `0600` and rewritten when the password changes. A separate SQLite database in the same directory tracks the digests of active new sessions and uses `0600` on POSIX. The SQLite profile lock admits one gate per profile and releases on exit.
 
 | Source | Contents |
 |---|---|

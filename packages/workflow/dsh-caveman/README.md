@@ -93,6 +93,8 @@ Use `/caveman`, `/ultracave`, `/megacave`, `/caveman ultra`, `/caveman wenyan`, 
 
 The native coding policy is included in the system prompt when the output module and Core are active. When the local runtime is running, it also supplies task-specific rules, maintains state across compaction, and can suggest reusing a verified unchanged file observation. Recovery references are shown only when the recovery MCP tool is available. `CAVEMAN_CORE=off`, record mode, or the `record-only` native profile disables the active rules; restart DSH after changing these settings. The `core-lean-build` profile adds the lean-build policy.
 
+On Windows, DSH disables the native event hooks until the local runtime can prove its pipe identity. Dynamic task rules, native compaction state, and file observation reuse require these hooks. On this platform, use the static coding policy and HTTP middleware.
+
 `/caveman-stats` reports usage recorded on committed assistant messages, with output attributed to response modes when recorded. Use `--all` for live and stored sessions, `--since 7d` or `--since 24h` for usage within that window, and `--share` for a concise report of the selected scope. Historical totals exclude fork-inherited events and identify unavailable records. Savings remain unknown without a comparison.
 
 ### Usage analysis

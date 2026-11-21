@@ -16,6 +16,16 @@ test('concurrent validations share the bounded pool', async () => {
   await Promise.all(Array.from({ length: 12 }, (_, i) => validateOutput(schema, { ok: true, count: i }, 5000)))
 })
 
+test('tools can reuse a schema identifier without sharing validators', async () => {
+  const $id = 'https://example.test/result-schema'
+  const other = { $id, type: 'object', properties: { label: { type: 'string' } }, required: ['label'] }
+  const first = { ...schema, $id }
+  await validateOutput(first, { ok: true }, 2000)
+  await validateOutput(other, { label: 'sample' }, 2000)
+  await assert.rejects(validateOutput(other, { ok: true }, 2000), /structured output does not match its schema/)
+  await validateOutput(first, { ok: false }, 2000)
+})
+
 test('a pathological schema cannot hang validation or exhaust the pool', async () => {
   const evil = { type: 'string', pattern: '^(a+)+$' }
   const started = Date.now()

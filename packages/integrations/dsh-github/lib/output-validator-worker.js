@@ -1,11 +1,9 @@
 import { parentPort } from 'node:worker_threads';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-// Reuse one AJV instance and a bounded cache of compiled validators so repeated
-// tool calls do not recompile schemas. The host recycles each worker after a
-// fixed number of tasks, which also bounds cache and heap growth.
+// Cache validators by host-assigned schema identity. Each new schema needs its
+// own AJV instance because the SDK's AJV cache also keys by remote $id.
 const MAX_CACHED_SCHEMAS = 16;
 const MAX_TASKS = 64;
-const provider = new AjvJsonSchemaValidator();
 // The host assigns a stable id per schema object and resends the schema only
 // while this worker has not compiled it, so warm calls skip the clone entirely.
 const cache = new Map();
@@ -28,7 +26,7 @@ parentPort?.on('message', (task) => {
         else {
             if (schema === undefined)
                 throw new Error('output schema was not provided');
-            validator = provider.getValidator(schema);
+            validator = new AjvJsonSchemaValidator().getValidator(schema);
             if (schemaId !== undefined) {
                 // Retire rather than evict: the host only omits a schema it believes
                 // this worker knows, so silently dropping one would break later hits.

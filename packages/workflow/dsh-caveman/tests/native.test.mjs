@@ -7,6 +7,8 @@ import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import { nativeCall, nativePrompt, nativeSocketPath, recoveryIsPublished, registerNative } from '../lib/native.js'
 
+const unixOnly = { skip: process.platform === 'win32' }
+
 test('native task classification sends a digest and bounded terms, not the raw prompt', () => {
   const prompt = 'Fix the regression in login with sk-secret-token and abcdefghijklmnopqrstuvwxyzabcdefghijklmn.'
   const result = nativePrompt(prompt)
@@ -19,9 +21,16 @@ test('native task classification sends a digest and bounded terms, not the raw p
   assert.equal(nativePrompt('please continue').task_profile.continuation, true)
 })
 
-test('native socket naming matches the runtime on Windows', () => {
-  assert.equal(nativeSocketPath('C:\\Users\\İlker\\ΝΙΚΟΣ\\.caveman', 'win32'), '\\\\.\\pipe\\caveman-native-4f3f9f7846224643')
-  assert.equal(nativeSocketPath('C:/Users/Jane Doe/.caveman', 'win32'), '\\\\.\\pipe\\caveman-native-0b9a73ef77a5671a')
+test('native socket endpoints are only available for Unix sockets', () => {
+  assert.equal(nativeSocketPath('fixture', 'win32'), undefined)
+  assert.equal(nativeSocketPath('fixture', 'linux'), join('fixture', 'run', 'native.sock'))
+})
+
+test('Windows keeps native events local without installing runtime hooks', { skip: process.platform !== 'win32' }, async () => {
+  const request = { toJSON() { assert.fail('Windows must not serialize native events') } }
+  assert.equal(await nativeCall('fixture', request), undefined)
+  const ctx = { on() { assert.fail('Windows must not register native hooks') } }
+  registerNative(ctx, 'http://127.0.0.1:8787', { mode: 'safe', profile: 'full-safe', core: true })
 })
 
 test('native recovery hints require a published direct tool or program binding', () => {
@@ -33,7 +42,7 @@ test('native recovery hints require a published direct tool or program binding',
   assert.equal(recoveryIsPublished({ tools: [{ name: 'run_code' }], sections: [] }, tool), false)
 })
 
-test('a newly starting native socket can be retried before any request was sent', async () => {
+test('a newly starting native socket can be retried before any request was sent', unixOnly, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-caveman-native-start-'))
   const server = createServer(socket => socket.once('data', () => socket.end(JSON.stringify({ protocol_version: 1, action: 'allow', visibility: 'silent', fail_open: true }) + '\n')))
   try {
@@ -49,7 +58,7 @@ test('a newly starting native socket can be retried before any request was sent'
   }
 })
 
-test('native responses are consumed as soon as a complete line arrives', async () => {
+test('native responses are consumed as soon as a complete line arrives', unixOnly, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-caveman-native-line-'))
   const connections = new Set()
   const server = createServer({ allowHalfOpen: true }, socket => {
@@ -70,7 +79,7 @@ test('native responses are consumed as soon as a complete line arrives', async (
   }
 })
 
-test('a late native response has transport slack without repeating the request', async () => {
+test('a late native response has transport slack without repeating the request', unixOnly, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-caveman-native-slack-'))
   let requests = 0
   const server = createServer(socket => socket.once('data', () => {
@@ -89,7 +98,7 @@ test('a late native response has transport slack without repeating the request',
   }
 })
 
-test('transient missing native responses do not discard the child session', async t => {
+test('transient missing native responses do not discard the child session', unixOnly, async t => {
   t.mock.timers.enable({ apis: ['Date'] })
   const directory = await mkdtemp(join(tmpdir(), 'dsh-caveman-native-recovery-'))
   const previous = process.env.CAVEMAN_HOME

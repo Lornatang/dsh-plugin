@@ -4,6 +4,7 @@
 
 - Move the source and release metadata to the shared dsh-plugin repository.
 - Install the bundle through the DSH CLI or plugin manager.
+- Reserve persistent admission capacity for new sessions so any active session can sign out even when the gate is at capacity. Continue accepting unexpired legacy cookies across the upgrade.
 
 ## 0.1.15 - 2026-11-19
 

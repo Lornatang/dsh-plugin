@@ -97,6 +97,8 @@ loader 会按 `src/config.ts` 校验每个字段，非法值在启动时直接�
 
 会话有效期固定为 `sessionDays`，不因活跃而延长。Cookie 名为 `dsh_gate`，带 `HttpOnly`、`SameSite=Lax`，当公共 origin 是 HTTPS 时还会带 `Secure`。`/__gate/logout` 会吊销会话、关闭该会话的 HTTP 流与 WebSocket，并用 `Clear-Site-Data` 请求浏览器清理缓存内容；其他会话保持连接。吊销记录在重启后依然有效。
 
+每个 profile 同时可保留 10,000 个新版会话。达到上限时，新登录返回 429，直到有会话退出或过期。升级前签发的 Cookie 仍可使用。若退出时旧版吊销列表已满，Frontgate 会一并注销所有剩余的旧版会话。
+
 状态位于 `$DSH_HOME/profiles/<name>/data/dsh-frontgate.json`。在 POSIX 系统上文件权限会被收紧为 `0600`；在 Windows 上需要使用 Windows ACL 限制对 profile 数据目录的访问。每个 profile 只允许一个门禁实例，由同目录下基于 SQLite 的操作系统级锁保证，进程退出（包括崩溃）时自动释放；因此数据目录必须支持 SQLite 锁，且门禁运行期间不能删除或替换锁文件。需要启用 Node.js 内置的 `node:sqlite` 模块，这也是本包要求 Node.js 22.19 或更高版本的原因。
 
 ### 远程访问
@@ -152,7 +154,7 @@ ports:
 
 代理会丢弃逐跳头与浏览器相关头，把 `Host` 与 `Origin` 改写成 harness origin，并在服务端完成启动 Cookie 交换，使浏览器始终看不到该 Cookie；交换得到的 Cookie 复用 25 分钟。WebSocket 升级在握手超时通过后于 TCP 层直接拼接。连接计数器在请求进入 harness 队列前限制准入。
 
-状态文件保存密码哈希、Cookie 签名密钥与吊销列表，以 `0600` 写入，并在密码变化时重写。其旁边的 SQLite 锁文件保证每个 profile 只有一个门禁，退出时释放。
+状态文件保存密码哈希、Cookie 签名密钥与旧版吊销记录，以 `0600` 写入，并在密码变化时重写。新版有效会话的摘要保存在同目录的 SQLite 数据库中，POSIX 上权限为 `0600`。SQLite profile 锁保证每个 profile 只有一个门禁，退出时释放。
 
 | 源码 | 内容 |
 |---|---|

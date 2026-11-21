@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
-import { normalize } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { registerCavecrewGit } from './cavecrew-git.js'
@@ -13,6 +13,62 @@ export interface Config { role: 'investigator' | 'builder' | 'reviewer' }
 export const Config: z<Config> = z.object({
   role: z.union([z.const('investigator'), z.const('builder'), z.const('reviewer')]).required(),
 })
+
+interface EditTargetState {
+  pending: number
+  committed: boolean
+}
+
+interface EditAttempt {
+  targets: Map<string, EditTargetState>
+  reservation?: { key: string; state: EditTargetState }
+}
+
+function limitBuilderEdits(ctx: Context): void {
+  const byAgent = new WeakMap<object, Map<string, EditTargetState>>()
+  const active = new WeakMap<object, EditAttempt>()
+
+  ctx.on('tools/execute', async (exec, next) => {
+    if (exec.name !== 'edit' || !exec.agent) return next()
+    const targets = byAgent.get(exec.agent) ?? new Map<string, EditTargetState>()
+    byAgent.set(exec.agent, targets)
+    const attempt: EditAttempt = { targets }
+    active.set(exec, attempt)
+    try {
+      return await next()
+    } finally {
+      active.delete(exec)
+      const reservation = attempt.reservation
+      if (reservation) {
+        reservation.state.pending -= 1
+        if (!reservation.state.committed && reservation.state.pending === 0) targets.delete(reservation.key)
+      }
+    }
+  })
+  // The filesystem tool supplies the resolved target that it will actually edit.
+  ctx.on('fs/edit-intent', async (target, actor, next) => {
+    const attempt = actor ? active.get(actor) : undefined
+    if (!attempt) return next()
+    const key = target.targetKey
+    if (attempt.reservation) {
+      if (attempt.reservation.key !== key) throw new Error('Cavecrew edit cannot change its resolved target.')
+      return next()
+    }
+    let state = attempt.targets.get(key)
+    if (!state) {
+      if (attempt.targets.size >= 2) throw new Error('Cavecrew builder is limited to two file paths.')
+      state = { pending: 0, committed: false }
+      attempt.targets.set(key, state)
+    }
+    state.pending += 1
+    attempt.reservation = { key, state }
+    return next()
+  }, { prepend: true })
+  ctx.on('fs/observed', (target, observation, actor) => {
+    const reservation = actor ? active.get(actor)?.reservation : undefined
+    if (reservation?.key === target.targetKey && observation.kind === 'present') reservation.state.committed = true
+  }, { prepend: true })
+}
 
 /** Install one original Cavecrew persona and keep its agent's tools bounded. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
@@ -38,11 +94,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     })
   }
   const permitted = new Set(allowed)
-  const edited = new WeakMap<object, Set<string>>()
-  const editKey = (value: string): string => {
-    const normalized = normalize(value)
-    return process.platform === 'win32' ? normalized.toLowerCase() : normalized
-  }
   ctx.tools.guard(exec => {
     if (!permitted.has(exec.name)) return `Cavecrew ${config.role} does not permit ${exec.name}.`
     if (config.role !== 'builder' || exec.name !== 'edit') return undefined
@@ -50,26 +101,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       !('file_path' in exec.arguments) || typeof exec.arguments.file_path !== 'string' || !exec.arguments.file_path.trim()) {
       return 'Cavecrew builder requires an existing file path.'
     }
-    const path = editKey(exec.arguments.file_path)
-    const paths = edited.get(exec.agent) ?? new Set<string>()
-    if (!paths.has(path)) {
-      if (paths.size >= 2) return 'Cavecrew builder is limited to two file paths.'
-      paths.add(path)
-      edited.set(exec.agent, paths)
-    }
     return undefined
   })
-  if (config.role === 'builder') {
-    // The guard runs before the edit body, so refund the budget when the edit fails.
-    ctx.on('tools/execute', async (exec, next) => {
-      const result = await next()
-      if (exec.name !== 'edit' || !exec.agent || !result.isError ||
-        typeof exec.arguments !== 'object' || exec.arguments === null ||
-        !('file_path' in exec.arguments) || typeof exec.arguments.file_path !== 'string') return result
-      edited.get(exec.agent)?.delete(editKey(exec.arguments.file_path))
-      return result
-    })
-  }
+  if (config.role === 'builder') limitBuilderEdits(ctx)
   ctx.on('agent/created', async ({ agent }) => {
     const available = allowed.filter(tool => ctx.tools.get(tool, agent) !== undefined)
     agent.ctx.tools.restrict({ allow: available })

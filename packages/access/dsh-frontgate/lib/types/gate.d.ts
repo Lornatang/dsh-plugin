@@ -11,8 +11,6 @@ import type { LogSink } from './context.ts';
 export interface GateRuntime {
     title: string;
     passwordHash: string;
-    secret: string;
-    pv: string;
     sessionSeconds: number;
     maxAttempts: number;
     maxPendingLoginsPerIp: number;
@@ -26,6 +24,7 @@ export interface GateRuntime {
 export interface GateOptions {
     runtime: GateRuntime;
     harnessCookie(): Promise<string>;
+    issueSession(): string | undefined;
     validSession(token: string): boolean;
     revokeSession(token: string): boolean;
     admit(req: IncomingMessage, res: ServerResponse, token: string): boolean;

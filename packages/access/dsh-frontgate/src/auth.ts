@@ -9,7 +9,10 @@ import { createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'no
 /** Name of the session cookie. */
 export const COOKIE = 'dsh_gate'
 /** Version prefix of signed session tokens. */
-export const TOKEN_VERSION = 'v1'
+export const TOKEN_VERSION = 'v2'
+export const LEGACY_TOKEN_VERSION = 'v1'
+
+export const isLegacyToken = (token: string): boolean => token.startsWith(LEGACY_TOKEN_VERSION + '.')
 /** Longest accepted token, in characters. */
 export const MAX_TOKEN_LENGTH = 256
 /** Shortest accepted configured password, in characters. */
@@ -127,7 +130,7 @@ export function randomPassword(): string {
  * without putting any password-derived value into the cookie. */
 export const newSessionEpoch = (): string => randomBytes(16).toString('base64url')
 
-/** Create a signed session token: v1.issuedAt.expiresAt.nonce.sessionEpoch.mac. */
+/** Create a signed session token: v2.issuedAt.expiresAt.nonce.sessionEpoch.mac. */
 export function signToken(secret: string, pv: string, ttlSeconds: number): string {
   const now = Math.floor(Date.now() / 1000)
   const body =
@@ -136,12 +139,13 @@ export function signToken(secret: string, pv: string, ttlSeconds: number): strin
 }
 
 /** Verify signature, version, password binding and expiry in constant time. */
-export function verifyToken(secret: string, pv: string, token: string | undefined): boolean {
+export function verifyToken(secret: string, pv: string, token: string | undefined,
+  expectedVersion: typeof TOKEN_VERSION | typeof LEGACY_TOKEN_VERSION = TOKEN_VERSION): boolean {
   if (typeof token !== 'string' || token.length > MAX_TOKEN_LENGTH) return false
   const parts = token.split('.')
   if (parts.length !== 6) return false
   const [version, iat, exp, nonce, tokenPv, mac] = parts
-  if (version !== TOKEN_VERSION || tokenPv !== pv) return false
+  if (version !== expectedVersion || tokenPv !== pv) return false
   // A token must have exactly one representation: otherwise a different
   // base64 encoding of the same MAC could evade its revocation digest.
   if (!/^[A-Za-z0-9_-]{22}$/.test(nonce!) || !/^[A-Za-z0-9_-]{43}$/.test(mac!)) return false

@@ -22,8 +22,10 @@ export interface RevokedSession {
 export interface State {
   passwordHash?: string
   secret?: string
-  /** Random tag bound into signed sessions; changes with the password. */
+  /** Signing epoch for session cookies issued before sessions were tracked. */
   sessionEpoch?: string
+  /** Signing epoch for sessions in the active-session database. */
+  managedSessionEpoch?: string
   createdAt?: string
   revokedSessions?: RevokedSession[]
 }
@@ -58,7 +60,7 @@ export function revocationRecords(entries: ReadonlyMap<string, number>): Revoked
 }
 
 /** Read existing state without replacing malformed or inaccessible credentials. */
-export function readState(path: string, mustExist = false, now = Math.floor(Date.now() / 1000)): State {
+export function readState(path: string, mustExist = false, now = Math.floor(Date.now() / 1000), includeRevocations = true): State {
   let data: string
   try {
     data = readFileSync(path, 'utf8')
@@ -73,13 +75,15 @@ export function readState(path: string, mustExist = false, now = Math.floor(Date
     if (!validPasswordHash(state.passwordHash) || typeof state.secret !== 'string' || state.secret.length < 64) {
       throw new Error('invalid credentials')
     }
-    if (state.sessionEpoch !== undefined &&
-        (typeof state.sessionEpoch !== 'string' || !/^[A-Za-z0-9_-]{16,43}$/.test(state.sessionEpoch))) {
-      throw new Error('invalid session epoch')
+    for (const epoch of [state.sessionEpoch, state.managedSessionEpoch]) {
+      if (epoch !== undefined && (typeof epoch !== 'string' || !/^[A-Za-z0-9_-]{16,43}$/.test(epoch))) {
+        throw new Error('invalid session epoch')
+      }
     }
     if (state.revokedSessions !== undefined && !Array.isArray(state.revokedSessions)) {
       throw new Error('invalid revoked sessions')
     }
+    if (!includeRevocations) return state
     const merged = new Map<string, number>()
     for (const entry of state.revokedSessions ?? []) mergeRevocation(merged, entry, now)
     let journal = ''

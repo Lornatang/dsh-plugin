@@ -9,6 +9,7 @@ import fs, { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSyn
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { apply, Config, hashPassword, injectPolyfill, verifyPassword } from '../lib/index.js'
@@ -410,7 +411,7 @@ test('correct password issues a session cookie', async (t) => {
   assert.equal(res.status, 303)
   assert.equal(res.headers.get('location'), '/')
   assert.equal(cookies.length, 1)
-  assert.match(cookies[0], /^dsh_gate=v1\./)
+  assert.match(cookies[0], /^dsh_gate=v2\./)
   assert.match(cookies[0], /HttpOnly/)
   assert.match(cookies[0], /SameSite=Lax/)
   assert.match(cookies[0], /Max-Age=/)
@@ -532,16 +533,36 @@ test('logout revokes only that session, including across restart', async (t) => 
   assert.equal((await request(first.port, '/api/sessions', { headers: { cookie: session2 } })).res.status, 200)
   const saved = readFileSync(join(dir, 'data', 'dsh-frontgate.json'), 'utf8')
   assert.ok(!saved.includes(session1))
-  // Logout appends to the durable revocation journal instead of rewriting the
-  // whole state file; the journal holds only digests, never the cookie value.
-  const journal = readFileSync(join(dir, 'data', 'dsh-frontgate.json.revocations'), 'utf8')
-  assert.ok(!journal.includes(session1))
-  assert.equal(journal.split('\n').filter(Boolean).length, 1)
+  withSessionDatabase(dir, (database) => {
+    const sessions = database.prepare('SELECT digest FROM sessions').all()
+    assert.deepEqual(sessions.map(({ digest }) => digest), [cookieDigest(session2)])
+  })
   first.dispose()
   second = await startGate(upstream.port, dir)
   assert.equal((await request(second.port, '/api/sessions', { headers: { cookie: session1 } })).res.status, 401)
   assert.equal((await request(second.port, '/api/sessions', { headers: { cookie: session2 } })).res.status, 200)
 })
+
+function cookieDigest(cookie) {
+  return createHash('sha256').update(cookie.slice(cookie.indexOf('=') + 1)).digest('base64url')
+}
+
+function withSessionDatabase(dir, callback) {
+  const database = new DatabaseSync(join(dir, 'data', 'dsh-frontgate.json.sessions.sqlite'))
+  try {
+    return callback(database)
+  } finally {
+    database.close()
+  }
+}
+
+function legacyCookie(dir) {
+  const state = JSON.parse(readFileSync(join(dir, 'data', 'dsh-frontgate.json'), 'utf8'))
+  const now = Math.floor(Date.now() / 1000)
+  const body = ['v1', now, now + 86400, randomBytes(16).toString('base64url'), state.sessionEpoch].join('.')
+  const signature = createHmac('sha256', state.secret).update(body).digest('base64url')
+  return 'dsh_gate=' + body + '.' + signature
+}
 
 function revocationFixture(count, expires) {
   const bytes = Buffer.alloc(32)
@@ -551,10 +572,67 @@ function revocationFixture(count, expires) {
   })
 }
 
+test('at session capacity an existing session can still log out and make room for a new login', async (t) => {
+  const { gate, dir, upstream } = await withGate(t)
+  const existing = await login(gate.port)
+  assert.equal(existing.res.status, 303)
+  const statePath = join(dir, 'data', 'dsh-frontgate.json')
+  const { managedSessionEpoch } = JSON.parse(readFileSync(statePath, 'utf8'))
+  withSessionDatabase(dir, (database) => {
+    const insert = database.prepare('INSERT INTO sessions (digest, epoch, expires) VALUES (?, ?, ?)')
+    database.exec('BEGIN')
+    for (const { digest, expires } of revocationFixture(9999, Math.floor(Date.now() / 1000) + 3600)) {
+      insert.run(digest, managedSessionEpoch, expires)
+    }
+    database.exec('COMMIT')
+  })
+  gate.dispose()
+  const restarted = await startGate(upstream.port, dir)
+  try {
+    const full = await login(restarted.port)
+    assert.equal(full.res.status, 429)
+    assert.equal(full.cookies.length, 0)
+    assert.equal((await request(restarted.port, '/__gate/logout', { headers: { cookie: existing.cookie } })).res.status, 302)
+    assert.equal((await request(restarted.port, '/api/sessions', { headers: { cookie: existing.cookie } })).res.status, 401)
+    assert.equal((await login(restarted.port)).res.status, 303)
+  } finally {
+    restarted.dispose()
+  }
+})
+
+test('upgrading the saved state preserves legacy sessions and journal revocations', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'frontgate-'))
+  const dataDir = join(dir, 'data')
+  mkdirSync(dataDir)
+  const statePath = join(dataDir, 'dsh-frontgate.json')
+  const legacyState = {
+    passwordHash: HASH,
+    secret: randomBytes(32).toString('hex'),
+    sessionEpoch: randomBytes(16).toString('base64url'),
+  }
+  writeFileSync(statePath, JSON.stringify(legacyState), { mode: 0o600 })
+  const activeCookie = legacyCookie(dir)
+  const revokedCookie = legacyCookie(dir)
+  const revoked = { digest: cookieDigest(revokedCookie), expires: Number(revokedCookie.split('.')[2]) }
+  writeFileSync(statePath + '.revocations', JSON.stringify(revoked) + '\n', { mode: 0o600 })
+  const upstream = await startUpstream()
+  let gate
+  t.after(async () => { gate?.dispose(); await upstream.close(); rmSync(dir, { recursive: true, force: true }) })
+  gate = await startGate(upstream.port, dir)
+
+  const migrated = JSON.parse(readFileSync(statePath, 'utf8'))
+  assert.equal(migrated.secret, legacyState.secret)
+  assert.equal(migrated.sessionEpoch, legacyState.sessionEpoch)
+  assert.match(migrated.managedSessionEpoch, /^[A-Za-z0-9_-]{22}$/)
+  assert.deepEqual(migrated.revokedSessions, [revoked])
+  assert.equal((await request(gate.port, '/api/sessions', { headers: { cookie: activeCookie } })).res.status, 200)
+  assert.equal((await request(gate.port, '/api/sessions', { headers: { cookie: revokedCookie } })).res.status, 401)
+})
+
 test('logout and restart work with a full snapshot of expired revocations', async (t) => {
   const { gate, upstream, dir } = await withGate(t)
   const path = join(dir, 'data', 'dsh-frontgate.json')
-  const { cookie } = await login(gate.port)
+  const cookie = legacyCookie(dir)
   const state = JSON.parse(readFileSync(path, 'utf8'))
   state.revokedSessions = revocationFixture(10000, Math.floor(Date.now() / 1000) - 60)
   writeFileSync(path, JSON.stringify(state))
@@ -569,13 +647,14 @@ test('logout and restart work with a full snapshot of expired revocations', asyn
   }
 })
 
-test('restart merges an interrupted compaction while preserving the longest revocation and capacity', async (t) => {
+test('legacy revocation migration retains the longest expiry and does not block logout at capacity', async (t) => {
   let now = Date.now()
   t.mock.method(Date, 'now', () => now)
   const { gate, upstream, dir } = await withGate(t)
   const path = join(dir, 'data', 'dsh-frontgate.json')
-  const { cookie } = await login(gate.port)
-  const otherCookie = (await login(gate.port)).cookie
+  const cookie = legacyCookie(dir)
+  const otherCookie = legacyCookie(dir)
+  const trackedCookie = (await login(gate.port)).cookie
   assert.equal((await request(gate.port, '/__gate/logout', { headers: { cookie } })).res.status, 302)
   const state = JSON.parse(readFileSync(path, 'utf8'))
   const entry = JSON.parse(readFileSync(path + '.revocations', 'utf8'))
@@ -589,8 +668,20 @@ test('restart merges an interrupted compaction while preserving the longest revo
   try {
     now += 20000
     assert.equal((await request(restarted.port, '/api/sessions', { headers: { cookie } })).res.status, 401)
-    assert.equal((await request(restarted.port, '/__gate/logout', { headers: { cookie: otherCookie } })).res.status, 503)
     assert.equal((await request(restarted.port, '/api/sessions', { headers: { cookie: otherCookie } })).res.status, 200)
+    const logout = await request(restarted.port, '/__gate/logout', { headers: { cookie: otherCookie } })
+    assert.equal(logout.res.status, 302)
+    assert.match(logout.cookies[0], /Max-Age=0/)
+    assert.equal((await request(restarted.port, '/api/sessions', { headers: { cookie: otherCookie } })).res.status, 401)
+    assert.equal((await request(restarted.port, '/api/sessions', { headers: { cookie: trackedCookie } })).res.status, 200)
+    restarted.dispose()
+    const next = await startGate(upstream.port, dir)
+    try {
+      assert.equal((await request(next.port, '/api/sessions', { headers: { cookie: otherCookie } })).res.status, 401)
+      assert.equal((await request(next.port, '/api/sessions', { headers: { cookie: trackedCookie } })).res.status, 200)
+    } finally {
+      next.dispose()
+    }
   } finally {
     restarted.dispose()
   }
@@ -600,7 +691,7 @@ test('logout can retry a failed journal compaction without growing the journal o
   const { gate, upstream, dir } = await withGate(t)
   const path = join(dir, 'data', 'dsh-frontgate.json')
   const journalPath = path + '.revocations'
-  const { cookie } = await login(gate.port)
+  const cookie = legacyCookie(dir)
   const stream = await openStream(gate.port, cookie)
   const expired = revocationFixture(1, Math.floor(Date.now() / 1000) - 60)[0]
   const line = JSON.stringify(expired) + '\n'
@@ -635,8 +726,8 @@ test('logout can retry a failed journal compaction without growing the journal o
 test('logout rolls back an incomplete journal append and can retry', async (t) => {
   const { gate, dir } = await withGate(t)
   const journalPath = join(dir, 'data', 'dsh-frontgate.json.revocations')
-  const firstCookie = (await login(gate.port)).cookie
-  const secondCookie = (await login(gate.port)).cookie
+  const firstCookie = legacyCookie(dir)
+  const secondCookie = legacyCookie(dir)
   assert.equal((await request(gate.port, '/__gate/logout', { headers: { cookie: firstCookie } })).res.status, 302)
   const original = readFileSync(journalPath, 'utf8')
 
@@ -664,8 +755,8 @@ for (const completeJson of [false, true]) {
   test('restart and logout recover from ' + tail + ' at the end of the journal', async (t) => {
     const { gate, upstream, dir } = await withGate(t)
     const journalPath = join(dir, 'data', 'dsh-frontgate.json.revocations')
-    const firstCookie = (await login(gate.port)).cookie
-    const secondCookie = (await login(gate.port)).cookie
+    const firstCookie = legacyCookie(dir)
+    const secondCookie = legacyCookie(dir)
     assert.equal((await request(gate.port, '/__gate/logout', { headers: { cookie: firstCookie } })).res.status, 302)
     const original = readFileSync(journalPath, 'utf8')
     const secondToken = secondCookie.slice(secondCookie.indexOf('=') + 1)
@@ -820,6 +911,23 @@ test('logout reports failure if revocation cannot be persisted', async (t) => {
   assert.equal(result.res.status, 503)
   assert.equal(result.cookies.length, 0)
   assert.equal((await request(gate.port, '/api/sessions', { headers: { cookie } })).res.status, 200)
+})
+
+test('logout keeps a tracked session usable until its database deletion succeeds', async (t) => {
+  const { gate, dir } = await withGate(t)
+  const { cookie } = await login(gate.port)
+  const database = new DatabaseSync(join(dir, 'data', 'dsh-frontgate.json.sessions.sqlite'))
+  try {
+    database.exec('BEGIN IMMEDIATE')
+    const blocked = await request(gate.port, '/__gate/logout', { headers: { cookie } })
+    assert.equal(blocked.res.status, 503)
+    assert.equal(blocked.cookies.length, 0)
+    assert.equal((await request(gate.port, '/api/sessions', { headers: { cookie } })).res.status, 200)
+  } finally {
+    database.close()
+  }
+  assert.equal((await request(gate.port, '/__gate/logout', { headers: { cookie } })).res.status, 302)
+  assert.equal((await request(gate.port, '/api/sessions', { headers: { cookie } })).res.status, 401)
 })
 
 test('tampered session cookies are rejected', async (t) => {

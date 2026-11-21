@@ -15,7 +15,7 @@ import type { AddressInfo, Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import { Config, DEFAULTS } from './config.ts'
-import { COOKIE, assertStrongPassword, hashPassword, newSessionEpoch, randomPassword, validPasswordHash } from './auth.ts'
+import { COOKIE, assertStrongPassword, hashPassword, isLegacyToken, newSessionEpoch, randomPassword, validPasswordHash } from './auth.ts'
 import { resolveLogger } from './context.ts'
 import { cookieValue, intOr, isLoopbackHost, normalizePublicOrigin, rejectUpgrade, sameOrigin, text } from './http.ts'
 import { injectPolyfill } from './polyfill.ts'
@@ -48,15 +48,22 @@ export interface GateHandle {
 export function apply(ctx: Context, config: Partial<Config> = {}): GateHandle {
   const statePath = statePathFor(ctx.profileContext?.patchPath)
   const releaseStateLock = acquireStateLock(statePath)
+  let closeSessions: (() => void) | undefined
+  const releaseProfile = (): void => {
+    const close = closeSessions
+    closeSessions = undefined
+    try { close?.() } finally { releaseStateLock() }
+  }
   try {
-    return start(ctx, config, statePath, releaseStateLock)
+    return start(ctx, config, statePath, releaseProfile, (close) => { closeSessions = close })
   } catch (err) {
-    releaseStateLock()
+    releaseProfile()
     throw err
   }
 }
 
-function start(ctx: Context, config: Partial<Config>, statePath: string, releaseStateLock: () => void): GateHandle {
+function start(ctx: Context, config: Partial<Config>, statePath: string,
+  releaseProfile: () => void, bindSessionCleanup: (close: () => void) => void): GateHandle {
   const logger = resolveLogger()
   const cfg: Config = { ...DEFAULTS, ...config }
   const listenHost = String(cfg.listenHost)
@@ -115,11 +122,15 @@ function start(ctx: Context, config: Partial<Config>, statePath: string, release
   const secret = !passwordChanged && typeof state.secret === 'string' && state.secret.length >= 64
     ? state.secret : randomBytes(32).toString('hex')
   const pv = !passwordChanged && typeof state.sessionEpoch === 'string' ? state.sessionEpoch : newSessionEpoch()
+  const managedEpoch = !passwordChanged && typeof state.managedSessionEpoch === 'string'
+    ? state.managedSessionEpoch : newSessionEpoch()
   const persistedState = {
-    passwordHash, secret, sessionEpoch: pv, createdAt: state.createdAt || new Date().toISOString(),
+    passwordHash, secret, sessionEpoch: pv, managedSessionEpoch: managedEpoch,
+    createdAt: state.createdAt || new Date().toISOString(),
     revokedSessions: passwordChanged ? [] : state.revokedSessions ?? [],
   }
-  if (state.passwordHash !== passwordHash || state.secret !== secret || state.sessionEpoch !== pv) {
+  if (state.passwordHash !== passwordHash || state.secret !== secret ||
+      state.sessionEpoch !== pv || state.managedSessionEpoch !== managedEpoch) {
     writeState(statePath, persistedState)
     // persistedState.revokedSessions already merges the journal (or is empty
     // after a password change), so the journal records are now redundant.
@@ -137,11 +148,15 @@ function start(ctx: Context, config: Partial<Config>, statePath: string, release
     throw new Error('dsh-frontgate: listenPort ' + listenPort + ' collides with the harness listener ' + targetOrigin)
   }
 
-  const active = new Map<Duplex | ServerResponse, { digest: string; timer?: NodeJS.Timeout }>()
+  interface ActiveConnection { digest: string; legacy: boolean; timer?: NodeJS.Timeout }
+  const active = new Map<Duplex | ServerResponse, ActiveConnection>()
   const httpBySession = new Map<string, number>()
-  const sessions = createSessionStore(statePath, persistedState, pv, (digest) => {
-    for (const [connection, entry] of active) if (entry.digest === digest) connection.destroy()
+  const sessions = createSessionStore(statePath, persistedState, sessionSeconds, (digest) => {
+    for (const [connection, entry] of active) {
+      if (digest === undefined ? entry.legacy : entry.digest === digest) connection.destroy()
+    }
   })
+  bindSessionCleanup(sessions.close)
 
   const proxy = createProxy({
     targetOrigin,
@@ -161,8 +176,6 @@ function start(ctx: Context, config: Partial<Config>, statePath: string, release
     runtime: {
       title: cfg.title,
       passwordHash,
-      secret,
-      pv,
       sessionSeconds,
       maxAttempts,
       maxPendingLoginsPerIp,
@@ -173,6 +186,7 @@ function start(ctx: Context, config: Partial<Config>, statePath: string, release
       secureCookie: publicProto === 'https',
     },
     harnessCookie: proxy.harnessCookie,
+    issueSession: sessions.issue,
     validSession: sessions.valid,
     revokeSession: sessions.revoke,
     admit: (req, res, token) => {
@@ -239,7 +253,7 @@ function start(ctx: Context, config: Partial<Config>, statePath: string, release
     // itself expires.
     if (connection.destroyed) return false
     const expiresAt = Number(token.split('.')[2]) * 1000
-    const entry: { digest: string; timer?: NodeJS.Timeout } = { digest: sessionDigest(token) }
+    const entry: ActiveConnection = { digest: sessionDigest(token), legacy: isLegacyToken(token) }
     active.set(connection, entry)
     const arm = (): void => {
       const remaining = expiresAt - Date.now()
@@ -318,7 +332,7 @@ function start(ctx: Context, config: Partial<Config>, statePath: string, release
     const withConnections = server as http.Server & { closeAllConnections?: () => void }
     if (typeof withConnections.closeAllConnections === 'function') withConnections.closeAllConnections()
     server.close()
-    releaseStateLock()
+    releaseProfile()
   }
 
   ctx.effect(() => ctx.webServer.tapIndex(injectPolyfill), 'dsh-frontgate: secure-context polyfill')

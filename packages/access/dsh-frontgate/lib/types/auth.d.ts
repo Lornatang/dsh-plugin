@@ -1,7 +1,9 @@
 /** Name of the session cookie. */
 export declare const COOKIE = "dsh_gate";
 /** Version prefix of signed session tokens. */
-export declare const TOKEN_VERSION = "v1";
+export declare const TOKEN_VERSION = "v2";
+export declare const LEGACY_TOKEN_VERSION = "v1";
+export declare const isLegacyToken: (token: string) => boolean;
 /** Longest accepted token, in characters. */
 export declare const MAX_TOKEN_LENGTH = 256;
 /** Shortest accepted configured password, in characters. */
@@ -31,10 +33,10 @@ export declare function randomPassword(): string;
  * regenerated whenever the password changes, so old cookies stop verifying
  * without putting any password-derived value into the cookie. */
 export declare const newSessionEpoch: () => string;
-/** Create a signed session token: v1.issuedAt.expiresAt.nonce.sessionEpoch.mac. */
+/** Create a signed session token: v2.issuedAt.expiresAt.nonce.sessionEpoch.mac. */
 export declare function signToken(secret: string, pv: string, ttlSeconds: number): string;
 /** Verify signature, version, password binding and expiry in constant time. */
-export declare function verifyToken(secret: string, pv: string, token: string | undefined): boolean;
+export declare function verifyToken(secret: string, pv: string, token: string | undefined, expectedVersion?: typeof TOKEN_VERSION | typeof LEGACY_TOKEN_VERSION): boolean;
 /** Session cookie attributes; Secure follows the browser-facing protocol. */
 export declare function sessionCookie(value: string, seconds: number, useTls: boolean): string;
 /** Expired session cookie. */
