@@ -1,0 +1,10 @@
+- insert:
+    - id: github
+      name: '@lornatang/dsh-github'
+      config:
+        serverName: github
+        url: 'https://api.githubcopilot.com/mcp/'
+        toolsets: 'repos,issues,pull_requests,actions'
+        readOnly: false
+        credentialSource: saved
+        oauthClientId: 'Ov23liyuutYTU29KMjVg'

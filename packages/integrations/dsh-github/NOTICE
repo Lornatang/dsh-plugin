@@ -1,0 +1,6 @@
+@lornatang/dsh-github
+Copyright 2026 Lornatang
+
+Portions of the credential storage, response limiting, output validation, client bundling,
+and integration test infrastructure are adapted from @lornatang/dsh-notion,
+Copyright 2026 Lornatang, distributed under the Apache License, Version 2.0.
