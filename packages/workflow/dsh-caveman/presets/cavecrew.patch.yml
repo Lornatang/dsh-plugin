@@ -1,0 +1,54 @@
+# Cavecrew agent presets and their in-process delegation tools. The read-only
+# roles use a read-only Git tool instead of a shell.
+- insert:
+    - id: preset-cavecrew-investigator
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: cavecrew-investigator
+        name: Cavecrew Investigator
+        plugins:
+          - id: cavecrew
+            name: '@lornatang/dsh-caveman/cavecrew'
+            config: { role: investigator }
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config: { readImage: false, write: false, edit: false, applyPatch: false }
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config: { sampleOverCapGlobResults: false }
+    - id: preset-cavecrew-builder
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: cavecrew-builder
+        name: Cavecrew Builder
+        plugins:
+          - id: cavecrew
+            name: '@lornatang/dsh-caveman/cavecrew'
+            config: { role: builder }
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config: { readImage: false, write: false, applyPatch: false }
+    - id: preset-cavecrew-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: cavecrew-reviewer
+        name: Cavecrew Reviewer
+        plugins:
+          - id: cavecrew
+            name: '@lornatang/dsh-caveman/cavecrew'
+            config: { role: reviewer }
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config: { readImage: false, write: false, edit: false, applyPatch: false }
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config: { sampleOverCapGlobResults: false }
+    - id: tool-cavecrew-investigator
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config: { provider: spawn, toolName: cavecrew-investigator, agentPreset: cavecrew-investigator }
+    - id: tool-cavecrew-builder
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config: { provider: spawn, toolName: cavecrew-builder, agentPreset: cavecrew-builder }
+    - id: tool-cavecrew-reviewer
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config: { provider: spawn, toolName: cavecrew-reviewer, agentPreset: cavecrew-reviewer }

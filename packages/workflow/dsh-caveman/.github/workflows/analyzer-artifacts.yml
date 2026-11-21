@@ -1,0 +1,53 @@
+name: Build analyzer binaries
+on:
+  push:
+    branches: ['release/0.1.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: vendor/caveman/go.mod
+          cache-dependency-path: vendor/caveman/go.sum
+      - name: Install verified Zig compiler
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+      - name: Build analyzer
+        shell: bash
+        run: |
+          mkdir -p build
+          os='${{ matrix.os }}'
+          if [[ "$os" == windows ]]; then os=win32; fi
+          file="dsh-caveman-learn_${os}_${{ matrix.arch }}"
+          node scripts/build-learn-binary.mjs '${{ matrix.os }}' '${{ matrix.arch }}' "build/$file"
+          echo "ARTIFACT=$file" >> "$GITHUB_ENV"
+      - name: Test real Linux analyzer
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          DSH_CAVEMAN_LEARN_BINARY="$PWD/build/$ARTIFACT" node --test tests/learn.integration.test.mjs tests/learn-binary.test.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: analyzer-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/${{ env.ARTIFACT }}
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,3 @@
+- insert:
+    - id: caveman
+      name: '@lornatang/dsh-caveman'

@@ -1,0 +1,15 @@
+# Example only: merge this provider with the existing llm-pi-ai providers.
+# Replacing the providers map would remove the other configured routes.
+- id: llm-pi-ai
+  config:
+    providers:
+      caveman-auto:
+        displayName: Caveman Auto
+        api: openai-completions
+        baseURL: 'http://127.0.0.1:8787/v1'
+        apiKeyEnv: OPENAI_API_KEY
+        headers:
+          x-cave-agent: dsh
+        models:
+          - id: caveman-auto
+            name: Caveman Auto

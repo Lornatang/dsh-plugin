@@ -1,0 +1,133 @@
+{
+  "name": "@lornatang/dsh-caveman",
+  "version": "0.1.9",
+  "description": "Caveman integration for DeepSeek Harness.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Lornatang",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "caveman",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=22.19",
+    "dsh": "*"
+  },
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "bin": {
+    "dsh-caveman": "./scripts/caveman-cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cavecrew": {
+      "types": "./lib/types/cavecrew.d.ts",
+      "default": "./lib/cavecrew.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts/caveman-cli.mjs",
+    "scripts/learn-binary.mjs",
+    "scripts/learn-checksums.json",
+    "scripts/benchmark.mjs",
+    "examples",
+    "presets",
+    "vendor/caveman/skills",
+    "vendor/caveman/agents/cavecrew-*.md",
+    "vendor/caveman/src/hooks/caveman-config.js",
+    "vendor/caveman/src/hooks/caveman-parse.js",
+    "vendor/caveman/src/hooks/package.json",
+    "vendor/caveman/LICENSE",
+    "vendor/caveman/LICENSE-MIT",
+    "vendor/caveman/NOTICE",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "LICENSE-MIT",
+    "NOTICE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:dsh": "node scripts/verify-dsh.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
+    "prepack": "npm test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/cavecrew.patch.yml"
+      ]
+    }
+  },
+  "dependencies": {
+    "@caveman-ai/cli": "4.1.0",
+    "@caveman-ai/sdk": "1.2.0",
+    "@deepseek-ai/schemastery": "~3.19.0",
+    "undici": "^8.12.4",
+    "yaml": "^2.8.1"
+  },
+  "overrides": {
+    "undici": "$undici",
+    "@modelcontextprotocol/client": "^2.4.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-llm": "*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/cordis-plugin-group": "1.1.0",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-agent-loop": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-agent-preset": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-agent-preset-registry": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-fs-local": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-mcp-manager": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-ptc-runtime": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-skill": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-subagent": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-executor-native": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-executor-ptc": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-fs": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-fs-search": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-working-directory": "0.2.2-rc.3",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lornatang/dsh-caveman.git"
+  },
+  "homepage": "https://github.com/Lornatang/dsh-caveman#readme",
+  "bugs": {
+    "url": "https://github.com/Lornatang/dsh-caveman/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -1,0 +1,14 @@
+# Merge this provider into the existing llm-pi-ai providers map.
+# Replace the model id with one available to the Anthropic credential.
+- id: llm-pi-ai
+  config:
+    providers:
+      caveman-anthropic:
+        displayName: Caveman Anthropic
+        api: anthropic-messages
+        baseURL: 'http://127.0.0.1:8787'
+        apiKeyEnv: ANTHROPIC_API_KEY
+        cacheRetention: short
+        models:
+          - id: claude-sonnet-4-5
+            name: Claude Sonnet 4.5
