@@ -17,7 +17,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     toolCallTimeoutMs: z<number, number, "defined">;
     toolsets: z<string, string, "defined">;
     readOnly: z<boolean, boolean, "defined">;
-    credentialSource: z<"saved" | "env" | "gh", "saved" | "env" | "gh", "defined">;
+    credentialSource: z<"env" | "gh" | "saved", "env" | "gh" | "saved", "defined">;
     oauthClientId: z<string, string, "defined">;
     oauthScopes: z<string, string, "defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
@@ -26,7 +26,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     toolCallTimeoutMs: z<number, number, "defined">;
     toolsets: z<string, string, "defined">;
     readOnly: z<boolean, boolean, "defined">;
-    credentialSource: z<"saved" | "env" | "gh", "saved" | "env" | "gh", "defined">;
+    credentialSource: z<"env" | "gh" | "saved", "env" | "gh" | "saved", "defined">;
     oauthClientId: z<string, string, "defined">;
     oauthScopes: z<string, string, "defined">;
 }>>, "plain">;

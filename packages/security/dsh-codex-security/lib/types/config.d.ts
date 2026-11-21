@@ -15,8 +15,8 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     stateDir: z<string, string, "defined">;
     maxFiles: z<number, number, "defined">;
     maxFileBytes: z<number, number, "defined">;
-    defaultMode: z<"standard" | "prompt-only" | "deep", "standard" | "prompt-only" | "deep", "defined">;
-    failOnSeverity: z<"informational" | "low" | "medium" | "high" | "critical" | "off", "informational" | "low" | "medium" | "high" | "critical" | "off", "defined">;
+    defaultMode: z<"deep" | "prompt-only" | "standard", "deep" | "prompt-only" | "standard", "defined">;
+    failOnSeverity: z<"critical" | "high" | "informational" | "low" | "medium" | "off", "critical" | "high" | "informational" | "low" | "medium" | "off", "defined">;
     allowExportOutsideWorkspace: z<boolean, boolean, "defined">;
     maxScanAgeDays: z<number, number, "defined">;
     deepWorkers: z<number, number, "defined">;
@@ -25,8 +25,8 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     stateDir: z<string, string, "defined">;
     maxFiles: z<number, number, "defined">;
     maxFileBytes: z<number, number, "defined">;
-    defaultMode: z<"standard" | "prompt-only" | "deep", "standard" | "prompt-only" | "deep", "defined">;
-    failOnSeverity: z<"informational" | "low" | "medium" | "high" | "critical" | "off", "informational" | "low" | "medium" | "high" | "critical" | "off", "defined">;
+    defaultMode: z<"deep" | "prompt-only" | "standard", "deep" | "prompt-only" | "standard", "defined">;
+    failOnSeverity: z<"critical" | "high" | "informational" | "low" | "medium" | "off", "critical" | "high" | "informational" | "low" | "medium" | "off", "defined">;
     allowExportOutsideWorkspace: z<boolean, boolean, "defined">;
     maxScanAgeDays: z<number, number, "defined">;
     deepWorkers: z<number, number, "defined">;

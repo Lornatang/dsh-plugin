@@ -15,3 +15,8 @@ updates:
       - /packages/workflow/dsh-caveman
     schedule:
       interval: weekly
+    groups:
+      dsh-test-runtime:
+        dependency-type: development
+        patterns:
+          - '@deepseek-ai/dsh-*'

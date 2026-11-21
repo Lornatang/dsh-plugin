@@ -18,8 +18,8 @@ declare const _default: {
         stateDir: import("@deepseek-ai/schemastery").default<string, string, "defined">;
         maxFiles: import("@deepseek-ai/schemastery").default<number, number, "defined">;
         maxFileBytes: import("@deepseek-ai/schemastery").default<number, number, "defined">;
-        defaultMode: import("@deepseek-ai/schemastery").default<"standard" | "prompt-only" | "deep", "standard" | "prompt-only" | "deep", "defined">;
-        failOnSeverity: import("@deepseek-ai/schemastery").default<"informational" | "low" | "medium" | "high" | "critical" | "off", "informational" | "low" | "medium" | "high" | "critical" | "off", "defined">;
+        defaultMode: import("@deepseek-ai/schemastery").default<"deep" | "prompt-only" | "standard", "deep" | "prompt-only" | "standard", "defined">;
+        failOnSeverity: import("@deepseek-ai/schemastery").default<"critical" | "high" | "informational" | "low" | "medium" | "off", "critical" | "high" | "informational" | "low" | "medium" | "off", "defined">;
         allowExportOutsideWorkspace: import("@deepseek-ai/schemastery").default<boolean, boolean, "defined">;
         maxScanAgeDays: import("@deepseek-ai/schemastery").default<number, number, "defined">;
         deepWorkers: import("@deepseek-ai/schemastery").default<number, number, "defined">;
@@ -28,8 +28,8 @@ declare const _default: {
         stateDir: import("@deepseek-ai/schemastery").default<string, string, "defined">;
         maxFiles: import("@deepseek-ai/schemastery").default<number, number, "defined">;
         maxFileBytes: import("@deepseek-ai/schemastery").default<number, number, "defined">;
-        defaultMode: import("@deepseek-ai/schemastery").default<"standard" | "prompt-only" | "deep", "standard" | "prompt-only" | "deep", "defined">;
-        failOnSeverity: import("@deepseek-ai/schemastery").default<"informational" | "low" | "medium" | "high" | "critical" | "off", "informational" | "low" | "medium" | "high" | "critical" | "off", "defined">;
+        defaultMode: import("@deepseek-ai/schemastery").default<"deep" | "prompt-only" | "standard", "deep" | "prompt-only" | "standard", "defined">;
+        failOnSeverity: import("@deepseek-ai/schemastery").default<"critical" | "high" | "informational" | "low" | "medium" | "off", "critical" | "high" | "informational" | "low" | "medium" | "off", "defined">;
         allowExportOutsideWorkspace: import("@deepseek-ai/schemastery").default<boolean, boolean, "defined">;
         maxScanAgeDays: import("@deepseek-ai/schemastery").default<number, number, "defined">;
         deepWorkers: import("@deepseek-ai/schemastery").default<number, number, "defined">;

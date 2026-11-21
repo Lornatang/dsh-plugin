@@ -3,7 +3,7 @@ import type { PluginContext } from './types.js';
 import type { CoverageSurface, SourceDelivery } from './types.js';
 import { ScanStore } from './store.js';
 import type { WorkerSnapshot } from './deep-worker.js';
-export declare const FORMATS: readonly ["sarif", "json", "csv", "markdown"];
+export declare const FORMATS: readonly ['sarif', 'json', 'csv', 'markdown'];
 export type ExportFormat = (typeof FORMATS)[number];
 interface SealOptions {
     signal?: AbortSignal;
