@@ -1,0 +1,52 @@
+[
+  {
+    "id": "r17",
+    "contract": "Return a preview with the replacement label. The input draft's label must stay unchanged. The draft has a writable, enumerable own data property called `label` that holds a string. The `nextLabel` argument is a different string.",
+    "source": [
+      "function previewLabel(draft, nextLabel) {",
+      "  return { ...draft, label: nextLabel }",
+      "}"
+    ]
+  },
+  {
+    "id": "r28",
+    "contract": "Return a progress object whose `completed` count advances by one when `accepted` is true and stays unchanged when it is false. The input progress object has an enumerable own data property called `completed` holding a nonnegative safe integer below `Number.MAX_SAFE_INTEGER`. Zero is represented as `+0`. The `accepted` argument is a boolean.",
+    "source": [
+      "function recordStep(progress, accepted) {",
+      "  const completed = progress.completed + 1",
+      "  return { ...progress, completed }",
+      "}"
+    ]
+  },
+  {
+    "id": "r43",
+    "contract": "Return a formatted preview. The input draft's label must stay unchanged. The draft has a writable, enumerable own data property called `label` that holds a string.",
+    "source": [
+      "import { formatPreview } from './formatter.js'",
+      "",
+      "function previewLabel(draft) {",
+      "  return formatPreview(draft)",
+      "}"
+    ]
+  },
+  {
+    "id": "r61",
+    "contract": "Return a preview with the replacement label. The input draft's label must stay unchanged. The draft has a writable, enumerable own data property called `label` that holds a string. The `nextLabel` argument is a different string.",
+    "source": [
+      "function previewLabel(draft, nextLabel) {",
+      "  draft.label = nextLabel",
+      "  return { ...draft }",
+      "}"
+    ]
+  },
+  {
+    "id": "r76",
+    "contract": "Return a progress object whose `completed` count advances by one when `accepted` is true and stays unchanged when it is false. The input progress object has an enumerable own data property called `completed` holding a nonnegative safe integer below `Number.MAX_SAFE_INTEGER`. Zero is represented as `+0`. The `accepted` argument is a boolean.",
+    "source": [
+      "function recordStep(progress, accepted) {",
+      "  const completed = progress.completed + (accepted ? 1 : 0)",
+      "  return { ...progress, completed }",
+      "}"
+    ]
+  }
+]

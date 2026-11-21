@@ -1,0 +1,3 @@
+- insert:
+    - id: security-audit
+      name: '@lornatang/dsh-security-audit'

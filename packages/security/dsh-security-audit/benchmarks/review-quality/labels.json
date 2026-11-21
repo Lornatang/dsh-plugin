@@ -1,0 +1,27 @@
+{
+  "r17": {
+    "expectedVerdict": "rejected",
+    "anchorLines": [2],
+    "rationale": "The replacement label applies to the returned copy."
+  },
+  "r28": {
+    "expectedVerdict": "source_supported",
+    "anchorLines": [2, 3],
+    "rationale": "The returned count increases even when the step is skipped."
+  },
+  "r43": {
+    "expectedVerdict": "needs_validation",
+    "anchorLines": [1, 4],
+    "rationale": "The wrapper forwards the original draft to an external helper. Inspect the helper to establish whether it changes the label."
+  },
+  "r61": {
+    "expectedVerdict": "source_supported",
+    "anchorLines": [2],
+    "rationale": "The function changes the caller's draft before returning a copy."
+  },
+  "r76": {
+    "expectedVerdict": "rejected",
+    "anchorLines": [2, 3],
+    "rationale": "The returned count only increases when the step is accepted."
+  }
+}
