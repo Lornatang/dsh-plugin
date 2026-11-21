@@ -32,7 +32,7 @@ dsh plugin --profile <name> add @lornatang/dsh-github
 dsh plugin --profile <name> remove @lornatang/dsh-github
 ```
 
-Versioned tarballs, when available, are listed in [GitHub Releases](https://github.com/Lornatang/dsh-github/releases). Restart DSH after adding or removing the bundle, then open Settings → GitHub in a Web profile.
+Versioned tarballs, when available, are listed in [GitHub Releases](https://github.com/Lornatang/dsh-plugin/releases). Restart DSH after adding or removing the bundle, then open Settings → GitHub in a Web profile.
 
 ### Connect GitHub
 

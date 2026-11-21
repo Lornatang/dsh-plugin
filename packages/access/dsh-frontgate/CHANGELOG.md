@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.16 - 2026-11-21
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+- Install the bundle through the DSH CLI or plugin manager.
+
 ## 0.1.15 - 2026-11-19
 
 - Use the same rules for reading and appending session revocations, including expired entries and interrupted journal compaction.

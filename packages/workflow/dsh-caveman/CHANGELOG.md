@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.10 - 2026-11-21
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+- Download the session analyzer and its platform-specific binaries from the same repository as the bundle.
+
 ## 0.1.9 - 2026-11-19
 
 - Recheck the runtime record before reusing cached health verification, so changed runtime identities cannot accept observations.

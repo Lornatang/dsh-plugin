@@ -43,7 +43,7 @@ git clone https://github.com/Lornatang/dsh-plugin.git
 cd dsh-plugin/packages/workflow/dsh-caveman
 npm ci
 npm pack
-dsh plugin --profile <name> add ./lornatang-dsh-caveman-0.1.5.tgz
+dsh plugin --profile <name> add ./lornatang-dsh-caveman-<version>.tgz
 ```
 
 The `add` command composes the bundle into the profile. Its patches insert the `caveman` row, three Cavecrew presets, and their delegation tools. Restart DSH after `add` or `remove` so the profile reloads its composition.

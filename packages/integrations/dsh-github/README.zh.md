@@ -32,7 +32,7 @@ dsh plugin --profile <name> add @lornatang/dsh-github
 dsh plugin --profile <name> remove @lornatang/dsh-github
 ```
 
-如需版本化安装包，可查看 [GitHub Releases](https://github.com/Lornatang/dsh-github/releases)。添加或删除后重启 DSH，在 Web profile 中打开 Settings → GitHub。
+如需版本化安装包，可查看 [GitHub Releases](https://github.com/Lornatang/dsh-plugin/releases)。添加或删除后重启 DSH，在 Web profile 中打开 Settings → GitHub。
 
 ### 连接 GitHub
 

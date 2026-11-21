@@ -129,6 +129,7 @@ test('policy gate fails at or above the configured severity', () => {
   assert.equal(policyGate([finding], 'high').failing, 1)
   const sarif = toSarif({ scanId: 'cs_' + 'b'.repeat(24), target: { displayName: 'demo', rootPath: '/tmp/demo' }, mode: 'standard' }, [finding])
   assert.equal(sarif.version, '2.1.0')
+  assert.equal(sarif.runs[0].tool.driver.informationUri, 'https://github.com/Lornatang/dsh-plugin/tree/main/packages/security/dsh-codex-security')
   assert.equal(sarif.runs[0].results.length, 1)
   assert.equal(sarif.runs[0].results[0].properties['security-severity'], '8.0')
 })

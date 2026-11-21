@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.16 - 2026-11-21
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+
 ## 0.1.15 - 2026-11-19
 
 - Serialize connection replacement and refresh the Jira site cache when the connection changes.

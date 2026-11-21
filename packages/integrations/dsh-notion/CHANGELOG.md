@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12 - 2026-11-21
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+
 ## 0.1.11 - 2026-11-19
 
 - Close the OAuth listener when plugin disposal overlaps a failed disconnect.

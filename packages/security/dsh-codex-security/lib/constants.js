@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 export const PACKAGE_NAME = '@lornatang/dsh-codex-security';
 export const PLUGIN_NAME = 'codex-security';
-export const VERSION = '0.1.14';
+export const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const ROUTE_PREFIX = '/plugins/codex-security';
 export const PRODUCER = { name: '@lornatang/dsh-codex-security', version: VERSION };
 export const SKILL_NAMES = ['security-scan', 'security-diff-scan', 'deep-security-scan', 'fix-finding', 'verify-fix', 'triage-finding', 'threat-model', 'track-findings', 'resolve-dependency-alert', 'vulnerability-writeup', 'assess-patch-risk', 'attack-path-analysis', 'define-security-policy', 'finding-discovery', 'propose-security-hardening', 'validation'];

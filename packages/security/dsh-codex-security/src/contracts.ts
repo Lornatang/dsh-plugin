@@ -467,7 +467,7 @@ export function toSarif(scan: ScanRecord, findings: Finding[]): Record<string, u
         driver: {
           name: 'codex-security',
           semanticVersion: VERSION,
-          informationUri: 'https://github.com/Lornatang/dsh-codex-security',
+          informationUri: 'https://github.com/Lornatang/dsh-plugin/tree/main/packages/security/dsh-codex-security',
           rules: ruleList,
         },
       },

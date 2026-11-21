@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.10
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+
 ## 0.1.9
 
 - Keep older status polls from overwriting the latest connection action and retry stalled polls.

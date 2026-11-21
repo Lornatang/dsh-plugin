@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.15] - 2026-11-21
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+- Point the SARIF tool information link at the plugin directory.
+- Read the runtime version from the package manifest.
+
 ## [0.1.14] - 2026-11-19
 
 - Separate enumerated files, source delivered to contributing workers, and focused review records in the workbench and reports.

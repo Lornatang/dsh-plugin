@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- Move the source and release metadata to the shared dsh-plugin repository.
+
 ## 0.1.8
 
 - Add a development-only blinded source-review benchmark with separate answer keys, known issues, clean controls, and an evidence-insufficient case.
