@@ -1,0 +1,131 @@
+{
+  "name": "@lornatang/dsh-codex-security",
+  "version": "0.1.14",
+  "description": "Agent-native security review workbench for DeepSeek Harness, modeled on OpenAI codex-security: sealed scans, findings contract, deep-scan orchestration and SARIF/JSON export.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Lornatang",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "security",
+    "code-security",
+    "appsec",
+    "sast",
+    "codex-security",
+    "security-scan",
+    "sarif"
+  ],
+  "engines": {
+    "node": ">=22.19",
+    "dsh": "*"
+  },
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./worker-preset": {
+      "types": "./lib/types/worker-preset.d.ts",
+      "default": "./lib/worker-preset.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "skills",
+    "references",
+    "schemas",
+    "docs",
+    "examples",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build:host": "tsc -p tsconfig.json",
+    "build:client": "tsc -p tsconfig.client.json",
+    "build:bundle": "node scripts/bundle-client.mjs",
+    "build": "npm run clean && npm run build:host && npm run build:client && npm run build:bundle",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.19.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-skill": ">=0.2.2-rc.2 <0.3.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent-preset-registry": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-skill": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.2",
+    "@types/node": "^26.6.6",
+    "@types/react": "^18.3.31",
+    "typescript": "^5.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lornatang/dsh-codex-security.git"
+  },
+  "homepage": "https://github.com/Lornatang/dsh-codex-security#readme",
+  "bugs": {
+    "url": "https://github.com/Lornatang/dsh-codex-security/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@koromix/koffi-android-arm64": "3.3.8",
+    "@koromix/koffi-android-x64": "3.3.8",
+    "@koromix/koffi-darwin-arm64": "3.3.8",
+    "@koromix/koffi-darwin-x64": "3.3.8",
+    "@koromix/koffi-freebsd-arm64": "3.3.8",
+    "@koromix/koffi-freebsd-ia32": "3.3.8",
+    "@koromix/koffi-freebsd-x64": "3.3.8",
+    "@koromix/koffi-linux-arm": "3.3.8",
+    "@koromix/koffi-linux-arm64": "3.3.8",
+    "@koromix/koffi-linux-ia32": "3.3.8",
+    "@koromix/koffi-linux-loong64": "3.3.8",
+    "@koromix/koffi-linux-ppc64": "3.3.8",
+    "@koromix/koffi-linux-riscv64": "3.3.8",
+    "@koromix/koffi-linux-x64": "3.3.8",
+    "@koromix/koffi-openbsd-arm64": "3.3.8",
+    "@koromix/koffi-openbsd-ia32": "3.3.8",
+    "@koromix/koffi-openbsd-x64": "3.3.8",
+    "@koromix/koffi-win32-arm64": "3.3.8",
+    "@koromix/koffi-win32-ia32": "3.3.8",
+    "@koromix/koffi-win32-x64": "3.3.8"
+  }
+}

@@ -1,0 +1,174 @@
+# Changelog
+
+## [0.1.14] - 2026-11-19
+
+- Separate enumerated files, source delivered to contributing workers, and focused review records in the workbench and reports.
+- Verify focused review references against the bound snapshot before sealing, including committed lines in revision-only diffs.
+
+## [0.1.13] - 2026-11-19
+
+- Anchor revision-only scan evidence to the bound Git revision.
+- Publish scan artifacts only once the scan is completed, and write Deep worker sidecars only when the worker result changes.
+
+## [0.1.12] - 2026-11-19
+
+- Read chunked evidence from the already verified worker text cache instead of re-reading and hashing the whole file per chunk.
+- Serve scan listings from a cached index invalidated by index.json metadata instead of rebuilding and locking on every read.
+- Read scan triage, findings and artifacts from the resolved scan directory in one pass instead of resolving the index repeatedly.
+- Offload Deep worker payloads to per-worker sidecar files so journal transitions no longer rewrite every worker findings on each save, and detect merge collisions with a set.
+- Group draft evidence reads by source file behind one bounded reader, and normalize tool results without a JSON round-trip.
+
+## [0.1.11] - 2026-11-19
+
+- Remove the unused scan-draft JSON schema and the three reference links that pointed at it; draft validation is unchanged and still enforced by the host.
+- Delete dead helpers, imports and fields across the target reader, git helpers, constants, routes, service and store modules.
+- Stop exporting symbols that nothing outside their module consumes.
+
+## [0.1.10] - 2026-11-18
+
+### Security
+
+- Refuse export destinations inside the scan state directory but outside its exports directory, so a scan cannot publish a file that aborts or rewrites another Deep run.
+- Require the Deep status tool to authorize the caller like every other Deep operation.
+- Reject cross-site and non-JSON HTTP mutations, and return 403 for managed scans instead of 500.
+
+### Fixed
+
+- Validate the scan manifest before publishing sealed artifacts, so an invalid threat model cannot leave a scan stuck as running with sealed files.
+- Key collected evidence by the sanitized location path so fingerprints, deduplication and scan comparison stay stable.
+- Require a unique non-empty id for every deferred coverage entry instead of stringifying a missing one.
+- Cache verified worker text per binding, so transferring a file in 4 KiB chunks no longer re-reads the whole file twice per chunk.
+
+## [0.1.9] - 2026-11-17
+
+### Security
+
+- Contain evidence reads to the scan target: sanitize and validate finding location paths, rejecting traversal, absolute paths and symlink escapes before reading any host file.
+- Eliminate catastrophic backtracking (ReDoS) in scope glob matching by collapsing nested quantifiers and matching include/exclude globs with a cached linear-time matcher.
+
+### Fixed
+
+- Read at most the requested byte limit when loading artifacts instead of buffering entire files into memory.
+- Create atomic-write temporary files exclusively (`wx`) with 96-bit random suffixes.
+- Reject option-like Git revision arguments (leading `-`) before invoking `rev-parse`.
+
+### Performance
+
+- Compile scope globs once and cache them, removing per-file/per-pattern RegExp recompilation during inventory walks.
+
+## [0.1.8] - 2026-11-16
+
+### Added
+
+- Coordinate independent, restricted Deep review workers with bounded concurrency, attempts, no-new stopping and wall-clock time.
+- Persist campaign progress and recovery claims, with authenticated cross-process resume and cancellation.
+- Add Codex-compatible skill workflows and artifact contracts, plus cross-platform worker, recovery and concurrency tests.
+
+### Fixed
+
+- Bind worker reads and evidence to verified target objects and file snapshots; keep incomplete coverage and conflicting findings visible.
+- Serialize shared indexes and scan mutations across processes and tolerate transient Windows file-sharing conflicts during atomic replacement.
+- Fail closed when target inventory cannot be enumerated or Git metadata cannot be resolved.
+- Use the macOS 26 ARM runner when macOS 15 ARM runners are unavailable.
+
+## [0.1.7] - 2026-11-16
+
+### Fixed
+
+- Load platform-specific native export binaries without dependency install scripts,
+  so a new DSH profile can install the bundle under pnpm's default build policy.
+
+## [0.1.6] - 2026-11-15
+
+### Changed
+
+- Allow safe links inside scan storage and Git metadata while rejecting direct or transitive aliases of an export destination.
+- Reduce duplicate protected-tree checks and inspect reachable directories concurrently with bounded work.
+- Add cross-platform tests for linked directories, cycles, dangling targets and concurrent retargeting.
+
+## [0.1.5] - 2026-11-15
+
+### Fixed
+
+- Revalidate scan storage and Git metadata at export checkpoints, including when a directory snapshot becomes a Git repository.
+- Reject aliases inside protected storage and logical output paths that escape through links.
+- Cover POSIX moves, protected-root changes and Git metadata redirection with cross-platform regression tests.
+
+## [0.1.4] - 2026-11-15
+
+### Fixed
+
+- Pin export directory identities across parent creation, exclusive publication and cleanup, detecting directory moves while preserving existing export boundaries.
+- Add cross-process race tests and Linux, macOS and Windows CI coverage. This release is available on GitHub only; no npm version is published.
+
+## [0.1.3] - 2026-11-15
+
+### Fixed
+
+- Prevent exports from replacing existing files or escaping through symlinked directories, and return complete large export documents.
+- Include a GitHub release archive; npm is not published for this release.
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.2] - 2026-11-15
+
+### Fixed
+
+- Declare the required DSH skill service and register loadable bundled skills.
+- Validate tool arguments and JSON output through the real DSH host contract.
+- Bind accurate target scopes, file contents and complete Git diffs, including untracked files.
+- Require explicit review coverage and diff dispositions before sealing; reject changed targets,
+  incompatible comparisons and writes to sealed artifacts.
+- Serialize scan mutations, rebuild missing indexes and validate sealed JSON against the bundled schemas.
+
+### Added
+
+- A default-mode start tool, a diff review-item update tool and real-host regression tests.
+
+### Changed
+
+- Publish the plugin as the scoped npm package `@lornatang/dsh-codex-security`. The
+  initial bare `dsh-codex-security@0.1.0` publish is deprecated in favour of the scoped
+  name; install with `dsh plugin --profile <profile> add @lornatang/dsh-codex-security`.
+- Ship the English documentation and examples with the package; align the architecture,
+  tool reference and skill workflows with the implementation.
+- Rewrite the README to the package-bundle documentation convention and add a Chinese
+  translation; the package now ships `README.md` and `README.zh.md`.
+- Publish `cordis.patch.yml` through the package `exports` map.
+
+## [0.1.0] - 2026-11-13
+
+Initial public release of the DeepSeek Harness port of the codex-security scan model.
+
+### Added
+
+- DSH plugin `codex-security` (`dsh-codex-security`) with a loader patch row,
+  a host plugin entry point, HTTP routes under `/plugins/codex-security` and a
+  **Codex Security** settings section in the web UI.
+- 27 `codex_security_*` host tools covering setup/target inspection, standard,
+  prompt-only and deep scan lifecycle, discovery candidates, validations, attack
+  paths, artifacts, drafts, findings and triage, diff review items, export and scan
+  comparison.
+- Ten agent skills registered from `skills/`: `security-scan`,
+  `security-diff-scan`, `deep-security-scan`, `fix-finding`, `verify-fix`,
+  `triage-finding`, `threat-model`, `track-findings`,
+  `resolve-dependency-alert` and `vulnerability-writeup`.
+- Sealed scan contract adapted from OpenAI codex-security: `findings.json`,
+  `coverage.json`, `scan-manifest.json` and `report.md`, with stable
+  `csf_`/`occ_` ids and `codex-security/v1` fingerprints.
+- Deep-scan orchestration with worker count, discovery-run budget,
+  stop-after-no-new and time limits recorded on the scan.
+- Diff scanning for pull requests, commit ranges, branches and working trees, with
+  per-file review items.
+- Exports in SARIF 2.1.0, JSON, CSV and Markdown, plus a `failOnSeverity`
+  policy gate.
+- Web workbench: status header, scan list, findings table with severity chips and
+  triage state, coverage summary and export links.
+- Configuration through Schemastery: `stateDir`, `maxFiles`, `maxFileBytes`,
+  `defaultMode`, `failOnSeverity`, `allowExportOutsideWorkspace`,
+  `maxScanAgeDays`, `deepWorkers` and `deepMaxDiscoveryRuns`.
+- Documentation: README, architecture, tool reference,
+  artifact contract, validation guide, and a GitHub Actions CI workflow.
