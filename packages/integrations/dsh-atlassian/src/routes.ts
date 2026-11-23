@@ -60,7 +60,7 @@ function required(input: Record<string, unknown>, key: string): string {
   return value
 }
 
-export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, connection?: EditableConnection): () => void {
+export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, connection: EditableConnection): () => void {
   return web.register({ kind: 'prefix', path: ROUTE_PREFIX, auth: 'required', handler: async (req, res, peer) => {
     if (!peer || peer.signal.aborted) { res.writeHead(401).end(); return }
     try {
@@ -69,10 +69,15 @@ export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board:
       const action = url.pathname.slice(ROUTE_PREFIX.length).replace(/^\//, '')
       const method = req.method ?? 'GET'
       if (method === 'GET' && action === 'status') {
-        respond(res, 200, { ...bridge.snapshot(), ok: true, board: { jql: options.jql, limit: options.limit, promptTemplate: options.promptTemplate }, ...(connection ? { configuration: connection.snapshot() } : {}) }); return
+        respond(res, 200, {
+          ...bridge.snapshot(),
+          ok: true,
+          board: { jql: options.jql, limit: options.limit, promptTemplate: options.promptTemplate },
+          configuration: connection.snapshot(),
+        })
+        return
       }
       if (method === 'POST' && action === 'configure') {
-        if (!connection) { respond(res, 503, { ok: false, error: 'Connection settings are unavailable' }); return }
         await connection.update(await readBody(req))
         respond(res, 200, { ok: true }); return
       }

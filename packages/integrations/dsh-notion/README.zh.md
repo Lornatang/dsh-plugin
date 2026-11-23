@@ -117,7 +117,7 @@ bundle 自带下面的行，profile 只需列出与它不同的部分。加载�
 
 bundle 在 `package.json` 中声明了两半：宿主入口由 `dsh.bundle.patch` 指定的行挂载，客户端入口以 `./client` 导出，由 `dsh.client.inject` 在 `platform: web` 下接入 UI 槽位包与设置包。宿主模块以 `notion` 注册并注入 `tools` 服务，客户端模块注入 `slots`。
 
-`apply` 用 `serverName`、`url` 和宿主报告的 profile patch 路径构造凭证存储，创建桥接，注册 dispose effect，并在 Web 服务器（或 HTTP 服务器）与连接服务都存在时绑定 `/plugins/notion` 路由，这些服务被替换时重新绑定。随后启动桥接：加载存储、绑定回环回调监听、在回调 URL 变化时清除已保存的客户端注册、令牌与 PKCE verifier、把新的回调 URL 写回存储，然后连接。遇到 401 时运行 SDK 授权流程并发布授权 URL；桥接最多等待 `authorizationTimeoutMs` 让回环回调返回，交换授权码并重试连接。连接成功后注册工具并报告 `ready`；第二次失败报告 `error` 与页面显示的消息。
+`apply` 用 `serverName`、`url` 和宿主报告的 profile patch 路径构造凭证存储，创建桥接并注册 dispose effect。它在宿主的 `webServer` 上注册需要鉴权的 `/plugins/notion` 路由，并在该服务变化时重新绑定。随后启动桥接：加载存储、绑定回环回调监听、在回调 URL 变化时清除已保存的客户端注册、令牌与 PKCE verifier、把新的回调 URL 写回存储，然后连接。遇到 401 时运行 SDK 授权流程并发布授权 URL；桥接最多等待 `authorizationTimeoutMs` 让回环回调返回，交换授权码并重试连接。连接成功后注册工具并报告 `ready`；第二次失败报告 `error` 与页面显示的消息。
 
 每个传输请求都经过一个 fetch 包装器：要求 HTTPS（允许回环 HTTP），要求目标源等于配置的服务器源，对每个请求施加 `toolCallTimeoutMs`，解码后的响应上限为 16 MiB，并把流事件限制为每十秒 1000 个、服务器打开的 event stream 限制为每十秒 8 个。工具发现按游标遍历页面，受 8 MiB 与 1000 个工具的预算约束，拒绝重名，并为每个工具注册一个定义：execute 调用服务器工具、错误结果抛出、工具声明 output schema 时要求并校验 `structuredContent`，JSON Schema 校验在 worker 线程中隔离执行。
 

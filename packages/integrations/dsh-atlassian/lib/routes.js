@@ -66,14 +66,15 @@ export function registerRoutes(web, bridge, board, options, connection) {
                 const action = url.pathname.slice(ROUTE_PREFIX.length).replace(/^\//, '');
                 const method = req.method ?? 'GET';
                 if (method === 'GET' && action === 'status') {
-                    respond(res, 200, { ...bridge.snapshot(), ok: true, board: { jql: options.jql, limit: options.limit, promptTemplate: options.promptTemplate }, ...(connection ? { configuration: connection.snapshot() } : {}) });
+                    respond(res, 200, {
+                        ...bridge.snapshot(),
+                        ok: true,
+                        board: { jql: options.jql, limit: options.limit, promptTemplate: options.promptTemplate },
+                        configuration: connection.snapshot(),
+                    });
                     return;
                 }
                 if (method === 'POST' && action === 'configure') {
-                    if (!connection) {
-                        respond(res, 503, { ok: false, error: 'Connection settings are unavailable' });
-                        return;
-                    }
                     await connection.update(await readBody(req));
                     respond(res, 200, { ok: true });
                     return;

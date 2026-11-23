@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.15 - 2026-11-23
+
+- Update the English and Chinese documentation to describe host-authenticated Notion routes.
+
 ## 0.1.14 - 2026-11-23
 
 - Use host authentication for connector routes. Requires DeepSeek Harness 0.2.3-alpha.2 or newer.

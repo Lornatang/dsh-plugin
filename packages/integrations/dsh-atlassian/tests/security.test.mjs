@@ -333,7 +333,7 @@ test('HTTP routes reject malformed encodings instead of failing with a server er
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${server.address().port}`
   try {
-    registerRoutes(web, bridge, board, options)
+    registerRoutes(web, bridge, board, options, { snapshot: () => ({}), update: async () => {} })
     const badKey = await fetch(`${base}/plugins/atlassian/issue/%E0%A4%A`)
     assert.equal(badKey.status, 400)
     assert.equal((await badKey.json()).code, 'bad-request')

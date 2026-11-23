@@ -31,4 +31,4 @@ export interface PluginBridge extends ToolBridge {
     start(): Promise<void>;
     dispose(): Promise<void>;
 }
-export declare function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, connection?: EditableConnection): () => void;
+export declare function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, connection: EditableConnection): () => void;

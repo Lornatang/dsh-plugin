@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.19 - 2026-11-23
+
+- Remove unreachable connection settings branches and an unused icon from the Jira client.
+
 ## 0.1.18 - 2026-11-23
 
 - Use host authentication for connector routes. Requires DeepSeek Harness 0.2.3-alpha.2 or newer.
