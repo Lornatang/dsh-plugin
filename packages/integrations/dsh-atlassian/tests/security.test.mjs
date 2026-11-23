@@ -260,24 +260,25 @@ test('credentials are profile-isolated, owner-only, atomic and not silently repl
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-test('HTTP routes fail closed until the DSH connection fence is available', async () => {
-  let handler
+test('HTTP routes require a live peer admitted by the DSH host', async () => {
+  let route
+  let peer
   let updates = 0
-  const web = { register(route) { handler = route.handler; return () => {} } }
+  const web = { register(value) { route = value; return () => {} } }
   const bridge = { snapshot: () => ({ status: 'idle', siteMismatch: false, toolCount: 0 }) }
   const options = { jql: '', limit: 50, timeoutMs: 1000, promptTemplate: '' }
   const connection = { snapshot: () => ({}), update: async () => { updates++ } }
-  const server = createServer((req, res) => void handler(req, res))
+  const server = createServer((req, res) => void route.handler(req, res, peer))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const url = `http://127.0.0.1:${server.address().port}/plugins/atlassian/status`
   try {
-    registerRoutes(web, bridge, {}, options, undefined)
-    assert.equal((await fetch(url)).status, 503)
-    registerRoutes(web, bridge, {}, options, { requestRejection: () => 401 }, connection)
+    registerRoutes(web, bridge, {}, options, connection)
+    assert.equal(route.auth, 'required')
     assert.equal((await fetch(url)).status, 401)
+    peer = { signal: AbortSignal.abort() }
     assert.equal((await fetch(url.replace('/status', '/configure'), { method: 'POST', body: '{}' })).status, 401)
     assert.equal(updates, 0)
-    registerRoutes(web, bridge, {}, options, { requestRejection: () => undefined }, connection)
+    peer = { signal: new AbortController().signal }
     assert.equal((await fetch(url)).status, 200)
     assert.equal((await fetch(url.replace('/status', '/configure'), { method: 'POST', body: '{}' })).status, 200)
     assert.equal(updates, 1)
@@ -327,16 +328,17 @@ test('HTTP routes reject malformed encodings instead of failing with a server er
     transitions: async () => { boardCalls++; return [] },
   }
   const options = { jql: '', limit: 50, timeoutMs: 1000, promptTemplate: '' }
-  const server = createServer((req, res) => void handler(req, res))
+  const peer = { signal: new AbortController().signal }
+  const server = createServer((req, res) => void handler(req, res, peer))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${server.address().port}`
   try {
-    registerRoutes(web, bridge, board, options, { requestRejection: () => undefined })
+    registerRoutes(web, bridge, board, options)
     const badKey = await fetch(`${base}/plugins/atlassian/issue/%E0%A4%A`)
     assert.equal(badKey.status, 400)
     assert.equal((await badKey.json()).code, 'bad-request')
     const res = { status: 0, body: '', writeHead(status) { this.status = status; return this }, end(body) { this.body = body ?? '' } }
-    await handler({ url: 'http://[', method: 'GET' }, res)
+    await handler({ url: 'http://[', method: 'GET' }, res, peer)
     assert.equal(res.status, 400)
     assert.match(res.body, /Invalid request URL/)
     assert.equal(boardCalls, 0, 'malformed requests must not reach the board')

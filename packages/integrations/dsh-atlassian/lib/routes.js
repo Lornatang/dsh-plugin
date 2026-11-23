@@ -48,18 +48,13 @@ function required(input, key) {
         throw new BoardError('bad-request', `Missing ${key}`);
     return value;
 }
-export function registerRoutes(web, bridge, board, options, fence, connection) {
-    return web.register({ kind: 'prefix', path: ROUTE_PREFIX, handler: async (req, res) => {
+export function registerRoutes(web, bridge, board, options, connection) {
+    return web.register({ kind: 'prefix', path: ROUTE_PREFIX, auth: 'required', handler: async (req, res, peer) => {
+            if (!peer || peer.signal.aborted) {
+                res.writeHead(401).end();
+                return;
+            }
             try {
-                if (!fence) {
-                    respond(res, 503, { ok: false, error: 'DSH connection service is unavailable' });
-                    return;
-                }
-                const rejection = fence.requestRejection(req);
-                if (rejection !== undefined) {
-                    res.writeHead(rejection).end();
-                    return;
-                }
                 let url;
                 try {
                     url = new URL(req.url ?? '/', 'http://localhost');

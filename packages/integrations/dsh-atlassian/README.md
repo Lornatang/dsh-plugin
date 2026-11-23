@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-atlassian` connects a dsh profile to Atlassian Cloud or a self-hosted Jira and Confluence pair. Cloud mode holds an OAuth 2.1 session with the Atlassian remote MCP server and registers the tools it advertises for agent sessions; server mode registers a fixed REST tool set. It adds an Atlassian settings section and a Jira board panel to the Web client. Add or remove it with `dsh plugin --profile <name> add|remove @lornatang/dsh-atlassian`. The boundary: one connection per row, unencrypted credentials under the profile data directory, and a loopback OAuth callback.
 
+Requires DeepSeek Harness `0.2.3-alpha.2` or later.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -56,7 +58,7 @@ The client half adds three rows, all owned and rendered by this package inside s
 - `sidebar.panellist`, id `jira-board`, order 40, label `Jira` — the sidebar icon that opens the board.
 - `main`, key `jira-board` — the board itself: search, project filter, JQL form, one column per issue status, issue detail with transition buttons, and Send to current session / Send to new session / Copy prompt.
 
-The routes behind those rows live at the fixed prefix `/plugins/atlassian` (`status`, `configure`, `connect`, `disconnect`, `debug-tools`, `board`, `projects`, `transition`, `issue/<key>`, `issue/<key>/transitions`). They answer only when the DSH `connection` service is present and its request fence admits the request; without the service the routes return 503.
+The routes behind those rows live at the fixed prefix `/plugins/atlassian` (`status`, `configure`, `connect`, `disconnect`, `debug-tools`, `board`, `projects`, `transition`, `issue/<key>`, `issue/<key>/transitions`). These routes require an authenticated DSH peer.
 
 ### Configuration
 
@@ -107,7 +109,7 @@ Service URLs go through the same validation when they are saved in Settings: the
 
 The layer is a single patch row: an `insert` of `atlassian` carrying the Cloud defaults. The patch has no platform gate; the client half is declared in `package.json` (`dsh.client.platform: web`, with the two slot packages injected), so a headless profile loads the host half only and the settings and board rows appear in a Web profile.
 
-`apply` selects the bridge from `mode` — `AtlassianBridge` for Cloud, `ServerBridge` for self-hosted — derives the credential identity (the configured URL for Cloud, `server:<jiraUrl>` and `<confluenceUrl>` joined by a NUL for self-hosted), builds a `SessionStore` for `sessionFileFor(serverName, identity, patchPath)`, creates the board, and registers the routes against `webServer` or `httpServer`. Every route sits behind the `connection` service's request fence; when the service appears after the plugin, an `internal/service` listener re-binds the routes. `void bridge.start()` runs in the background and logs failures.
+`apply` selects the bridge from `mode` — `AtlassianBridge` for Cloud, `ServerBridge` for self-hosted — derives the credential identity (the configured URL for Cloud, `server:<jiraUrl>` and `<confluenceUrl>` joined by a NUL for self-hosted), builds a `SessionStore` for `sessionFileFor(serverName, identity, patchPath)`, creates the board, and registers authenticated routes on `webServer`. An `internal/service` listener updates the bindings when the web service changes. `void bridge.start()` runs in the background and logs failures.
 
 The Cloud path uses OAuth 2.1 with PKCE through the MCP SDK: a callback server on `127.0.0.1:<redirectPort>` receives `/callback`, `createCloudFetch` rejects every non-HTTPS endpoint (loopback HTTP excepted) and caps response bodies and SSE events at 10 MiB, and after `connect` the bridge paginates `tools/list` (at most 100 pages and 1000 tools) and registers each definition. The site label comes from `getAccessibleAtlassianResources`.
 
@@ -126,7 +128,7 @@ The client half registers into `settings.section`, `sidebar.panellist` and `main
 | `src/oauth.ts` | PKCE provider, loopback callback server, HTTPS-only fetch wrapper, response size limits. |
 | `src/store.ts` | Profile-scoped credential file: naming, ownership and symlink checks, atomic `0600` writes. |
 | `src/board.ts` | `JiraBoard`: JQL search, site resolution, issue detail, transitions, projects. |
-| `src/routes.ts` | `/plugins/atlassian` handlers behind the DSH request fence. |
+| `src/routes.ts` | `/plugins/atlassian` handlers authenticated by the DSH host. |
 | `src/open-url.ts` | Browser launch for the authorization page, HTTPS or loopback HTTP only. |
 | `src/client/index.tsx` | Settings section, sidebar entry and board panel; calls the routes above. |
 | `tests/*.test.mjs` | Bridge, configuration, security, server and browser suites. |
@@ -176,6 +178,6 @@ These constraints describe what the layer does not bridge and where a profile ha
 
 `npm run build` cleans `lib/`, compiles the host and client trees with `tsc`, then bundles `src/client/index.tsx` into `lib/client.js` with `scripts/bundle-client.mjs`. `npm test` runs that build and then `node --test tests/*.test.mjs`, which includes the Chrome-backed browser suite; `npm run typecheck` runs both `tsc --noEmit` passes. `npm run test:dsh` runs `scripts/verify-dsh.mjs`, which packs the plugin with `npm pack` and drives a real `dsh` binary (default `dsh`, overridable with `DSH_TEST_BINARY`) through profile creation, `plugin add`, the authenticated Web route, a self-hosted connect, a board load and `plugin remove`, then runs the browser check. The environment variables the script reads are `DSH_TEST_BINARY`, `DSH_TEST_MODE=server`, `DSH_TEST_UPGRADE_FROM=legacy-fixture`, `DSH_TEST_LANGUAGE` and `CHROME_PATH`.
 
-`lib/` is committed and CI runs `git diff --exit-code -- lib`, so rebuild and include `lib/` with any source change. Node.js 22.19 or newer is required (`engines.node`), the peer dependency is `@deepseek-ai/cordis ~4.1.0`, and the optional `dsh-tools`/`dsh-llm` development dependencies track the `0.2.2-rc.2` DSH line. The stored file is `data/atlassian-bridge-<serverName>-<first 12 hex of sha256(identity)>.json` with `version: 1`; changing the identity computation or the file naming orphans saved credentials. `tests/language.test.mjs` scans `README.md`, `CHANGELOG.md`, `NOTICE`, `src/` and `lib/` for CJK characters, so English text belongs in `README.md` and Chinese only in `README.zh.md`.
+`lib/` is committed and CI runs `git diff --exit-code -- lib`, so rebuild and include `lib/` with any source change. Node.js 22.19 or newer is required (`engines.node`), the peer dependency is `@deepseek-ai/cordis ~4.1.0`, and the optional `dsh-tools` and `dsh-llm` development dependencies are declared with `*`. The stored file is `data/atlassian-bridge-<serverName>-<first 12 hex of sha256(identity)>.json` with `version: 1`; changing the identity computation or the file naming orphans saved credentials. `tests/language.test.mjs` scans `README.md`, `CHANGELOG.md`, `NOTICE`, `src/` and `lib/` for CJK characters, so English text belongs in `README.md` and Chinese only in `README.zh.md`.
 
 </details>

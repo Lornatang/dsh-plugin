@@ -11,6 +11,8 @@ kind: "package-bundle"
 
 `dsh-github` 将 DeepSeek Harness profile 连接到 GitHub 托管的 MCP 服务，向 agent 注册仓库文件、Issue、Pull Request 和 Actions 等工具，并在 Web 客户端中加入 GitHub 连接设置页。可通过浏览器授权、已登录的 GitHub CLI 或个人访问令牌连接；服务端未标为只读的工具调用会交给 DSH 审批。本包内置 GitHub OAuth 应用的公开 Client ID；可用工具与账号权限由 GitHub 决定。
 
+需要 DeepSeek Harness `0.2.3-alpha.2` 或更新版本。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -118,7 +120,7 @@ dsh plugin --profile <name> remove @lornatang/dsh-github
 <details>
 <summary>实现内幕 — 点击展开</summary>
 
-`dsh.bundle.patch` 在 profile 中插入宿主记录；`dsh.client` 暴露 Web 设置区。`apply` 创建 profile 范围的存储和桥接，绑定经过请求栅栏的路由，监听 DSH 的执行前策略事件，并启动所配置的凭据来源。桥接使用 Streamable HTTP MCP 连接，分页发现工具，并为每个服务端定义注册一个 DSH 工具。失败或取消的连接会移除其注册；Disconnect 先中止请求再删除保存的状态，卸载则保留状态供下次启动。
+`dsh.bundle.patch` 在 profile 中插入宿主记录；`dsh.client` 暴露 Web 设置区。`apply` 创建 profile 范围的存储和桥接，注册由 DSH 宿主鉴权的路由，监听 DSH 的执行前策略事件，并启动所配置的凭据来源。桥接使用 Streamable HTTP MCP 连接，分页发现工具，并为每个服务端定义注册一个 DSH 工具。失败或取消的连接会移除其注册；Disconnect 先中止请求再删除保存的状态，卸载则保留状态供下次启动。
 
 | 源文件 | 内容 |
 |---|---|
@@ -173,6 +175,6 @@ dsh plugin --profile <name> remove @lornatang/dsh-github
 <details>
 <summary>维护者工作上下文 — 点击展开</summary>
 
-`npm run build` 清理并编译宿主和客户端，再将客户端打包为 `lib/client.js`；`lib` 提交到仓库。`npm run typecheck` 检查两个 TypeScript 工程；`npm test` 构建并运行模拟服务测试。`npm run test:dsh` 将打包结果安装进临时真实 DSH profile，检查请求栅栏、加密凭据文件，并在 Chrome 可用时测试设置页。非默认位置可设置 `DSH_TEST_BINARY` 和 `CHROME_PATH`。要求 Node.js 22.19 或更高版本。
+`npm run build` 清理并编译宿主和客户端，再将客户端打包为 `lib/client.js`；`lib` 提交到仓库。`npm run typecheck` 检查两个 TypeScript 工程；`npm test` 构建并运行模拟服务测试。`npm run test:dsh` 将打包结果安装进临时真实 DSH profile，检查宿主鉴权和加密凭据文件，并在 Chrome 可用时测试设置页。非默认位置可设置 `DSH_TEST_BINARY` 和 `CHROME_PATH`。要求 Node.js 22.19 或更高版本。
 
 </details>

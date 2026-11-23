@@ -4,8 +4,14 @@ import type { BoardConfig } from './config.js'
 import { BoardError, type JiraBoard, type ToolBridge } from './board.js'
 
 export const ROUTE_PREFIX = '/plugins/atlassian'
-export interface RouteRegistrar { register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void }
-export interface RequestFence { requestRejection(req: IncomingMessage): number | undefined }
+export interface RouteRegistrar {
+  register(route: {
+    kind: 'prefix'
+    path: string
+    auth: 'required'
+    handler: (req: IncomingMessage, res: ServerResponse, peer?: { signal: AbortSignal }) => void | Promise<void>
+  }): () => void
+}
 export interface EditableConnection {
   snapshot(): { jiraUrl: string; confluenceUrl: string; jiraCaFile: string; confluenceCaFile: string; allowInsecureHttp: boolean }
   update(input: Record<string, unknown>): Promise<void>
@@ -54,12 +60,10 @@ function required(input: Record<string, unknown>, key: string): string {
   return value
 }
 
-export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, fence: RequestFence | undefined, connection?: EditableConnection): () => void {
-  return web.register({ kind: 'prefix', path: ROUTE_PREFIX, handler: async (req, res) => {
+export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, connection?: EditableConnection): () => void {
+  return web.register({ kind: 'prefix', path: ROUTE_PREFIX, auth: 'required', handler: async (req, res, peer) => {
+    if (!peer || peer.signal.aborted) { res.writeHead(401).end(); return }
     try {
-      if (!fence) { respond(res, 503, { ok: false, error: 'DSH connection service is unavailable' }); return }
-      const rejection = fence.requestRejection(req)
-      if (rejection !== undefined) { res.writeHead(rejection).end(); return }
       let url: URL
       try { url = new URL(req.url ?? '/', 'http://localhost') } catch { respond(res, 400, { ok: false, error: 'Invalid request URL' }); return }
       const action = url.pathname.slice(ROUTE_PREFIX.length).replace(/^\//, '')

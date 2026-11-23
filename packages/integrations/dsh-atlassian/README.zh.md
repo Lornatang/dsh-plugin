@@ -11,6 +11,8 @@ kind: "package-bundle"
 
 `dsh-atlassian` 将 dsh profile 连接到 Atlassian Cloud，或连接到一对自建 Jira、Confluence 服务。Cloud 模式与 Atlassian 远程 MCP 服务器保持 OAuth 2.1 会话，并把它向 agent 会话公布的每个工具注册进来；server 模式注册一组固定的 REST 工具。它会在 Web 客户端中加入 Atlassian 设置区与 Jira 看板面板。安装或移除使用 `dsh plugin --profile <name> add|remove @lornatang/dsh-atlassian`。边界：每行一个连接，凭据以未加密形式存放在 profile 数据目录下，OAuth 回调走回环地址。
 
+需要 DeepSeek Harness `0.2.3-alpha.2` 或更新版本。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -56,7 +58,7 @@ Cloud 模式下工具面来自远程服务器的目录：MCP `tools/list` 返回
 - `sidebar.panellist`，id `jira-board`，order 40，label `Jira`——打开看板的侧边栏图标。
 - `main`，key `jira-board`——看板本身：搜索、项目过滤、JQL 表单、按 issue 状态分列、带流转按钮的 issue 详情，以及 Send to current session / Send to new session / Copy prompt。
 
-这些行背后的路由位于固定前缀 `/plugins/atlassian`（`status`、`configure`、`connect`、`disconnect`、`debug-tools`、`board`、`projects`、`transition`、`issue/<key>`、`issue/<key>/transitions`）。只有在 DSH `connection` 服务存在且其请求栅栏放行时它们才响应；没有该服务时路由返回 503。
+这些行背后的路由位于固定前缀 `/plugins/atlassian`（`status`、`configure`、`connect`、`disconnect`、`debug-tools`、`board`、`projects`、`transition`、`issue/<key>`、`issue/<key>/transitions`）。这些路由只接受 DSH 宿主已认证的会话请求。
 
 ### 配置
 
@@ -107,7 +109,7 @@ profile 补丁中有一条 `atlassian` 记录。随包提供的层以 Cloud 默�
 
 本层只有一条补丁记录：一个插入 `atlassian` 的 `insert`，并带上 Cloud 默认值。补丁没有平台门控；客户端部分在 `package.json` 中声明（`dsh.client.platform: web`，并注入两个 slot 包），因此无界面 profile 只加载宿主部分，设置区与看板行只出现在 Web profile 中。
 
-`apply` 按 `mode` 选择桥接——Cloud 用 `AtlassianBridge`，自建用 `ServerBridge`——推导凭据身份（Cloud 为配置的 URL，自建为 `server:<jiraUrl>` 与 `<confluenceUrl>` 用 NUL 连接），用 `sessionFileFor(serverName, identity, patchPath)` 构造 `SessionStore`，创建看板，并把路由注册到 `webServer` 或 `httpServer`。所有路由都在 `connection` 服务的请求栅栏之后；若该服务在插件之后出现，`internal/service` 监听器会重新绑定路由。`void bridge.start()` 在后台运行并记录失败。
+`apply` 按 `mode` 选择桥接——Cloud 用 `AtlassianBridge`，自建用 `ServerBridge`——推导凭据身份（Cloud 为配置的 URL，自建为 `server:<jiraUrl>` 与 `<confluenceUrl>` 用 NUL 连接），用 `sessionFileFor(serverName, identity, patchPath)` 构造 `SessionStore`，创建看板，并在 `webServer` 上注册需要鉴权的路由。Web 服务变化时，`internal/service` 监听器会更新绑定。`void bridge.start()` 在后台运行并记录失败。
 
 Cloud 路径通过 MCP SDK 使用带 PKCE 的 OAuth 2.1：`127.0.0.1:<redirectPort>` 上的回调服务器接收 `/callback`，`createCloudFetch` 拒绝所有非 HTTPS 端点（回环 HTTP 除外），并把响应体与 SSE 事件限制在 10 MiB；`connect` 之后桥接会分页读取 `tools/list`（最多 100 页、1000 个工具）并注册每个定义。站点标签来自 `getAccessibleAtlassianResources`。
 
@@ -126,7 +128,7 @@ Cloud 路径通过 MCP SDK 使用带 PKCE 的 OAuth 2.1：`127.0.0.1:<redirectPo
 | `src/oauth.ts` | PKCE provider、回环回调服务器、仅 HTTPS 的 fetch 包装、响应大小限制。 |
 | `src/store.ts` | profile 范围的凭据文件：命名、属主与符号链接检查、原子 `0600` 写入。 |
 | `src/board.ts` | `JiraBoard`：JQL 搜索、站点解析、issue 详情、流转、项目。 |
-| `src/routes.ts` | DSH 请求栅栏之后的 `/plugins/atlassian` 处理器。 |
+| `src/routes.ts` | 由 DSH 宿主鉴权的 `/plugins/atlassian` 处理器。 |
 | `src/open-url.ts` | 授权页面的浏览器启动，仅 HTTPS 或回环 HTTP。 |
 | `src/client/index.tsx` | 设置区、侧边栏入口与看板面板；调用上面的路由。 |
 | `tests/*.test.mjs` | 桥接、配置、安全、服务端与浏览器测试套件。 |
@@ -176,6 +178,6 @@ Cloud 路径通过 MCP SDK 使用带 PKCE 的 OAuth 2.1：`127.0.0.1:<redirectPo
 
 `npm run build` 清理 `lib/`，用 `tsc` 编译宿主与客户端两个树，再用 `scripts/bundle-client.mjs` 把 `src/client/index.tsx` 打包成 `lib/client.js`。`npm test` 先执行该构建，再执行 `node --test tests/*.test.mjs`，其中包含依赖 Chrome 的浏览器套件；`npm run typecheck` 执行两次 `tsc --noEmit`。`npm run test:dsh` 执行 `scripts/verify-dsh.mjs`：用 `npm pack` 打包插件，并驱动真实的 `dsh` 二进制（默认 `dsh`，可用 `DSH_TEST_BINARY` 覆盖）依次完成创建 profile、`plugin add`、带认证的 Web 路由请求、自建连接、看板加载与 `plugin remove`，最后执行浏览器检查。脚本读取的环境变量是 `DSH_TEST_BINARY`、`DSH_TEST_MODE=server`、`DSH_TEST_UPGRADE_FROM=legacy-fixture`、`DSH_TEST_LANGUAGE` 与 `CHROME_PATH`。
 
-`lib/` 已提交，CI 会执行 `git diff --exit-code -- lib`，因此任何源码改动都要重新构建并一并提交 `lib/`。需要 Node.js 22.19 或更新版本（`engines.node`），peer 依赖是 `@deepseek-ai/cordis ~4.1.0`，可选的 `dsh-tools`/`dsh-llm` 开发依赖跟随 `0.2.2-rc.2` 的 DSH 版本线。存储文件为 `data/atlassian-bridge-<serverName>-<sha256(identity) 前 12 个十六进制字符>.json`，内容带 `version: 1`；修改身份计算或文件命名会让已保存的凭据失配。`tests/language.test.mjs` 会扫描 `README.md`、`CHANGELOG.md`、`NOTICE`、`src/` 与 `lib/` 中的 CJK 字符，因此英文写在 `README.md`，中文只能放在 `README.zh.md`。
+`lib/` 已提交，CI 会执行 `git diff --exit-code -- lib`，因此任何源码改动都要重新构建并一并提交 `lib/`。需要 Node.js 22.19 或更新版本（`engines.node`），peer 依赖是 `@deepseek-ai/cordis ~4.1.0`，可选的 `dsh-tools` 和 `dsh-llm` 开发依赖声明为 `*`。存储文件为 `data/atlassian-bridge-<serverName>-<sha256(identity) 前 12 个十六进制字符>.json`，内容带 `version: 1`；修改身份计算或文件命名会让已保存的凭据失配。`tests/language.test.mjs` 会扫描 `README.md`、`CHANGELOG.md`、`NOTICE`、`src/` 与 `lib/` 中的 CJK 字符，因此英文写在 `README.md`，中文只能放在 `README.zh.md`。
 
 </details>

@@ -11,6 +11,8 @@ kind: "package-bundle"
 
 `dsh-notion` 把一个 dsh profile 连接到 Notion 官方 MCP 服务器。它执行 OAuth 流程，把凭证保存在 profile 内的加密文件中、密钥放在宿主凭证库，并注册服务器通告的全部工具，让 agent 以授权账号的权限搜索、读取和更新工作区内容。用 `add` 命令安装，在 设置 → Notion 中授权一次，再用同样的命令移除。边界：每行一个 Notion 连接，凭证绑定 profile 路径与宿主钥匙串，本身不提供任何工具或提示词文本。
 
+需要 DeepSeek Harness `0.2.3-alpha.2` 或更新版本。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -58,7 +60,7 @@ dsh plugin --profile <name> remove @lornatang/dsh-notion
 
 设置页面渲染标题 Notion 与副标题 Connect your Notion workspace to DSH、一个 Connection 标签、一张带状态点的状态卡（Loading、Not connected、Connecting、Waiting for Notion authorization、Connected 或 Connection failed，并显示可用工具数量）、一段提示（授权期间切换为授权提醒）、桥接报告错误时的错误提示，以及操作项：Authorize in Notion（授权期间指向授权 URL 的链接）、Connect Notion、Disconnect、Refresh status，和帮助链接 Learn about Notion MCP permissions and administration。页面每三秒轮询 `GET /plugins/notion/status`，在任何浏览器语言下都保持英文。
 
-三个路由位于 DSH 连接栅栏之后：连接服务缺失时返回 503，被栅栏拒绝的请求以栅栏自身的状态码返回。Connect 与 Disconnect 返回设置页面渲染的同一份状态快照。
+三个路由都只接受 DSH 宿主已认证的会话请求。Connect 与 Disconnect 返回设置页面渲染的同一份状态快照。
 
 ### 凭证
 
@@ -129,7 +131,7 @@ bundle 在 `package.json` 中声明了两半：宿主入口由 `dsh.bundle.patch
 | `src/bridge.ts` | 连接生命周期、授权等待、工具注册与命名、传输限制、状态快照。 |
 | `src/oauth.ts` | 同源 fetch 守卫、回环回调服务器、带 PKCE、state 和客户端元数据的 OAuth provider。 |
 | `src/store.ts` | 凭证文件路径、AES-256-GCM 信封、钥匙串或环境变量密钥、文件加固。 |
-| `src/routes.ts` | `/plugins/notion` 的状态、连接与断开路由，栅栏与 503 处理。 |
+| `src/routes.ts` | `/plugins/notion` 的状态、连接与断开路由，由 DSH 宿主鉴权。 |
 | `src/response-limit.ts` | 16 MiB 解码响应上限与单事件流上限。 |
 | `src/output-validator.ts`、`src/output-validator-worker.ts` | 延迟执行、worker 隔离的结构化工具输出 JSON Schema 校验。 |
 | `src/open-url.ts` | 在主机上打开授权 URL，仅 HTTPS 或回环 HTTP。 |

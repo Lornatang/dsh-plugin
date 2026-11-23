@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-github` connects a DeepSeek Harness profile to GitHub's hosted MCP server. It registers the server's tools for repository files, issues, pull requests and Actions, and adds a GitHub connection page to the Web client. Connect by authorizing in a browser, with an already authenticated GitHub CLI, or with a personal access token; the bridge asks DSH for approval before calls that are not marked read-only by the server. The package includes the public Client ID of its GitHub OAuth app. Available tools and account permissions are defined by GitHub.
 
+Requires DeepSeek Harness `0.2.3-alpha.2` or later.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -120,7 +122,7 @@ Every request stays on the configured origin, with redirects not followed automa
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The `dsh.bundle.patch` manifest inserts a host row; `dsh.client` exposes the Web settings section. `apply` creates a profile-specific store and bridge, binds the fenced routes, listens for DSH's pre-execution policy event, and starts the configured credential source. The bridge opens a Streamable HTTP MCP connection, discovers all tool pages, and registers one DSH tool per server definition. A failed or cancelled connection removes its registrations. Disconnect aborts outstanding requests before deleting saved state; unloading preserves state for the next start. The settings page polls connection status every three seconds while its tab is visible.
+The `dsh.bundle.patch` manifest inserts a host row; `dsh.client` exposes the Web settings section. `apply` creates a profile-specific store and bridge, registers routes that require an authenticated DSH peer, listens for DSH's pre-execution policy event, and starts the configured credential source. The bridge opens a Streamable HTTP MCP connection, discovers all tool pages, and registers one DSH tool per server definition. A failed or cancelled connection removes its registrations. Disconnect aborts outstanding requests before deleting saved state; unloading preserves state for the next start. The settings page polls connection status every three seconds while its tab is visible.
 
 | Source | Contents |
 |---|---|
@@ -131,7 +133,7 @@ The `dsh.bundle.patch` manifest inserts a host row; `dsh.client` exposes the Web
 | `src/oauth.ts` | GitHub device authorization and access-token refresh. |
 | `src/transport.ts`, `src/response-limit.ts` | Origin restriction, headers and response limits. |
 | `src/store.ts` | Encrypted credential file and host keyring. |
-| `src/routes.ts` | Fenced connection routes. |
+| `src/routes.ts` | Connection routes authenticated by the DSH host. |
 | `src/output-validator.ts`, `src/output-validator-worker.ts` | Pooled, worker-isolated validation of structured output with bounded cleanup. |
 | `src/client/index.tsx` | GitHub settings page. |
 | `tests/*.test.mjs` | Mock MCP, credential, lifecycle and approval tests. |
@@ -175,6 +177,6 @@ Connecting adds the discovered tool definitions to the request prefix; disconnec
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-`npm run build` cleans and compiles the host and client, then bundles the client into `lib/client.js`. `lib` is committed. `npm run typecheck` checks both TypeScript projects; `npm test` builds and runs the mock-backed tests. `npm run test:dsh` installs the packed bundle into a temporary real DSH profile, checks its request fence and encrypted credential file, and exercises the settings page in Chrome when available. Set `DSH_TEST_BINARY` and `CHROME_PATH` for non-default locations. Node.js 22.19 or newer is required.
+`npm run build` cleans and compiles the host and client, then bundles the client into `lib/client.js`. `lib` is committed. `npm run typecheck` checks both TypeScript projects; `npm test` builds and runs the mock-backed tests. `npm run test:dsh` installs the packed bundle into a temporary real DSH profile, checks host authentication and the encrypted credential file, and exercises the settings page in Chrome when available. Set `DSH_TEST_BINARY` and `CHROME_PATH` for non-default locations. Node.js 22.19 or newer is required.
 
 </details>

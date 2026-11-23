@@ -4,8 +4,14 @@ import type { BridgeSnapshot, ConnectInput } from './bridge.js'
 export const ROUTE_PREFIX = '/plugins/github'
 /** A fenced client can still trickle request bytes forever; bound the read. */
 export const REQUEST_BODY_TIMEOUT_MS = 5000
-export interface RouteRegistrar { register(route: { kind: 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void }
-export interface RequestFence { requestRejection(req: IncomingMessage): number | undefined }
+export interface RouteRegistrar {
+  register(route: {
+    kind: 'prefix'
+    path: string
+    auth: 'required'
+    handler: (req: IncomingMessage, res: ServerResponse, peer?: { signal: AbortSignal }) => void | Promise<void>
+  }): () => void
+}
 export interface PluginBridge {
   snapshot(): BridgeSnapshot
   connect(input: ConnectInput): Promise<BridgeSnapshot>
@@ -42,11 +48,9 @@ async function readInput(req: IncomingMessage): Promise<ConnectInput> {
   throw new Error('Invalid connection request')
 }
 
-export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, fence: RequestFence | undefined): () => void {
-  return web.register({ kind: 'prefix', path: ROUTE_PREFIX, handler: async (req, res) => {
-    if (!fence) { respond(res, 503, { ok: false, error: 'DSH connection service is unavailable' }); return }
-    const rejection = fence.requestRejection(req)
-    if (rejection !== undefined) { res.writeHead(rejection).end(); return }
+export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge): () => void {
+  return web.register({ kind: 'prefix', path: ROUTE_PREFIX, auth: 'required', handler: async (req, res, peer) => {
+    if (!peer || peer.signal.aborted) { res.writeHead(401).end(); return }
     const path = new URL(req.url ?? '/', 'http://localhost').pathname
     try {
       if (req.method === 'GET' && path === `${ROUTE_PREFIX}/status`) { respond(res, 200, { ...bridge.snapshot(), ok: true }); return }

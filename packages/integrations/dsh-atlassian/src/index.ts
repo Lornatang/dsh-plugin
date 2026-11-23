@@ -3,7 +3,7 @@ import { AtlassianBridge } from './bridge.js'
 import { ServerBridge } from './server-bridge.js'
 import { createBoard } from './board.js'
 import { Config, configureEndpoints, type Config as Settings } from './config.js'
-import { registerRoutes, type EditableConnection, type PluginBridge, type RequestFence, type RouteRegistrar } from './routes.js'
+import { registerRoutes, type EditableConnection, type PluginBridge, type RouteRegistrar } from './routes.js'
 import { SessionStore, sessionFileFor } from './store.js'
 
 export const name = 'atlassian'
@@ -13,7 +13,7 @@ export { Config }
 interface Scope {
   get(name: string): unknown
   profileContext?: { patchPath?: string }
-  on?(event: string, callback: () => void): (() => void) | undefined
+  on?(event: string, callback: (name?: string) => void): (() => void) | undefined
 }
 
 interface ConfigEditor {
@@ -52,18 +52,19 @@ export function apply(ctx: Context, config: Settings): void {
   ctx.effect(() => () => bridge.dispose(), 'atlassian:connection')
   ctx.effect(() => {
     let dispose: (() => void) | undefined
-    let secured = false
+    let boundWeb: unknown
     const bind = (): void => {
-      const web = (scope.get('webServer') ?? scope.get('httpServer')) as RouteRegistrar | undefined
-      if (!web) return
-      const fence = scope.get('connection') as RequestFence | undefined
-      if (dispose && (secured || !fence)) return
+      const web = scope.get('webServer') as RouteRegistrar | undefined
+      const webIdentity: unknown = web && (Reflect.get(web, Symbol.for('cordis.original')) ?? web)
+      if (webIdentity === boundWeb) return
       dispose?.()
-      dispose = registerRoutes(web, bridge, board, config.board, fence, connection)
-      secured = !!fence
+      boundWeb = webIdentity
+      dispose = web ? registerRoutes(web, bridge, board, config.board, connection) : undefined
     }
     bind()
-    const off = scope.on?.('internal/service', bind)
+    const off = scope.on?.('internal/service', (name) => {
+      if (!name || name === 'webServer') bind()
+    })
     return () => { off?.(); dispose?.() }
   }, 'atlassian:routes')
   void bridge.start().catch((error: unknown) => ctx.logger.error(`atlassian: ${String(error)}`))

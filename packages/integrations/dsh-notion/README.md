@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-notion` connects a dsh profile to Notion's official MCP server. It runs the OAuth flow, keeps the grant in an encrypted file in the profile with its key in the host credential store, and registers every tool the server advertises so an agent can search, read, and update workspace content as the authorizing account. Add it with the `add` command, authorize once in Settings → Notion, and remove it the same way. The boundary: one Notion connection per row, credentials tied to the profile path and the host keyring, no tool text of its own.
 
+Requires DeepSeek Harness `0.2.3-alpha.2` or later.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -58,7 +60,7 @@ When the server advertises the resources capability, three resource tools join t
 
 The settings page renders the header Notion with the subtitle Connect your Notion workspace to DSH, a Connection label, a status card with a state dot and one of Loading, Not connected, Connecting, Waiting for Notion authorization, Connected or Connection failed plus the number of tools available, a note that switches to the authorization reminder while authorizing, an error alert when the bridge reports one, and the actions Authorize in Notion (a link to the authorization URL while authorizing), Connect Notion, Disconnect, Refresh status, and the help link Learn about Notion MCP permissions and administration. It polls `GET /plugins/notion/status` every three seconds and stays in English on every browser locale.
 
-The three routes sit behind the DSH connection fence: while the connection service is absent they answer 503, and a fenced request is rejected with the fence's own status. Connect and Disconnect return the same status snapshot the settings page renders.
+All three routes require an authenticated DSH peer. Connect and Disconnect return the same status snapshot the settings page renders.
 
 ### Credentials
 
@@ -129,7 +131,7 @@ The callback listener binds only `127.0.0.1`. Client UI text is fixed English, a
 | `src/bridge.ts` | Connection lifecycle, authorization wait, tool registration and naming, transport limits, status snapshot. |
 | `src/oauth.ts` | Same-origin fetch guard, loopback callback server, OAuth provider with PKCE, state and client metadata. |
 | `src/store.ts` | Credential file path, AES-256-GCM envelope, keyring or environment key, file hardening. |
-| `src/routes.ts` | The `/plugins/notion` status, connect and disconnect routes, fence and 503 handling. |
+| `src/routes.ts` | The `/plugins/notion` status, connect and disconnect routes authenticated by the DSH host. |
 | `src/response-limit.ts` | The 16 MiB decoded response cap and per-event stream cap. |
 | `src/output-validator.ts`, `src/output-validator-worker.ts` | Deferred, worker-isolated JSON Schema validation of structured tool output. |
 | `src/open-url.ts` | Opening the authorization URL on the host, HTTPS or loopback HTTP only. |

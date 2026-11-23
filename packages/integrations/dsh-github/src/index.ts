@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { GithubBridge } from './bridge.js'
 import { Config, type Config as Settings } from './config.js'
-import { registerRoutes, type RequestFence, type RouteRegistrar } from './routes.js'
+import { registerRoutes, type RouteRegistrar } from './routes.js'
 import { SessionStore, sessionFileFor } from './store.js'
 
 export const name = 'github'
@@ -13,11 +13,6 @@ interface Scope {
   get(name: string): unknown
   profileContext?: { patchPath?: string }
   on?(event: string, callback: (...args: any[]) => unknown): (() => void) | undefined
-}
-
-function identity(value: unknown): unknown {
-  if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return value
-  return (value as Record<symbol, unknown>)[Symbol.for('cordis.original')] ?? value
 }
 
 export function apply(ctx: Context, config: Settings): void {
@@ -40,18 +35,17 @@ export function apply(ctx: Context, config: Settings): void {
   ctx.effect(() => {
     let dispose: (() => void) | undefined
     let boundWeb: unknown
-    let boundFence: unknown
     const bind = (): void => {
-      const web = (scope.get('webServer') ?? scope.get('httpServer')) as RouteRegistrar | undefined
-      const fence = scope.get('connection') as RequestFence | undefined
-      if (dispose && identity(web) === boundWeb && identity(fence) === boundFence) return
-      dispose?.(); dispose = undefined
-      boundWeb = identity(web); boundFence = identity(fence)
-      if (web) dispose = registerRoutes(web, bridge, fence)
+      const web = scope.get('webServer') as RouteRegistrar | undefined
+      const webIdentity: unknown = web && (Reflect.get(web, Symbol.for('cordis.original')) ?? web)
+      if (webIdentity === boundWeb) return
+      dispose?.()
+      boundWeb = webIdentity
+      dispose = web ? registerRoutes(web, bridge) : undefined
     }
     bind()
     const off = scope.on?.('internal/service', (name?: string) => {
-      if (!name || name === 'connection' || name === 'webServer' || name === 'httpServer') bind()
+      if (!name || name === 'webServer') bind()
     })
     return () => { off?.(); dispose?.() }
   }, 'github:routes')

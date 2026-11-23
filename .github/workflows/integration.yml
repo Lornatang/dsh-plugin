@@ -50,7 +50,7 @@ jobs:
       - run: npm run build
       - run: npm install --prefix "$RUNNER_TEMP/bridge-pnpm" --no-audit --no-fund pnpm@12.16.1
       - run: echo "$RUNNER_TEMP/bridge-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
-      - run: npm install --prefix "$RUNNER_TEMP/bridge-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm install --prefix "$RUNNER_TEMP/bridge-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.3-alpha.2
       - run: npm run test:dsh
         env:
           DSH_TEST_BINARY: ${{ runner.temp }}/bridge-dsh/node_modules/.bin/dsh
@@ -86,7 +86,7 @@ jobs:
       - run: npm run build
       - run: npm install --prefix "$RUNNER_TEMP/github-pnpm" --no-audit --no-fund pnpm@12.16.1
       - run: echo "$RUNNER_TEMP/github-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
-      - run: npm install --prefix "$RUNNER_TEMP/github-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm install --prefix "$RUNNER_TEMP/github-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.3-alpha.2
       - run: npm run test:dsh
         env:
           DSH_TEST_BINARY: ${{ runner.temp }}/github-dsh/node_modules/.bin/dsh
@@ -110,7 +110,7 @@ jobs:
       - run: npm run build
       - run: npm install --prefix "$RUNNER_TEMP/notion-pnpm" --no-audit --no-fund pnpm@12.16.1
       - run: echo "$RUNNER_TEMP/notion-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
-      - run: npm install --prefix "$RUNNER_TEMP/notion-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npm install --prefix "$RUNNER_TEMP/notion-dsh" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.3-alpha.2
       - run: npm run test:dsh
         env:
           DSH_TEST_BINARY: ${{ runner.temp }}/notion-dsh/node_modules/.bin/dsh

@@ -13,7 +13,7 @@ import { startMockMcp } from './mock-mcp.mjs'
 
 process.env.DSH_GITHUB_ENCRYPTION_KEY = Buffer.alloc(32, 18).toString('base64')
 
-test('browser authorization and cancellation use separate fenced routes', async () => {
+test('browser authorization and cancellation use separate authenticated routes', async () => {
   let route
   let received
   let cancelled = false
@@ -25,8 +25,9 @@ test('browser authorization and cancellation use separate fenced routes', async 
     async cancel() { cancelled = true; return snapshot },
     async disconnect() { disconnected = true; return snapshot },
   }
-  registerRoutes({ register(value) { route = value; return () => {} } }, bridge, { requestRejection: () => undefined })
-  const server = createServer((req, res) => void route.handler(req, res))
+  registerRoutes({ register(value) { route = value; return () => {} } }, bridge)
+  const peer = { signal: new AbortController().signal }
+  const server = createServer((req, res) => void route.handler(req, res, peer))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${server.address().port}/plugins/github`
   try {
@@ -44,32 +45,31 @@ test('browser authorization and cancellation use separate fenced routes', async 
   }
 })
 
-test('routes require the DSH fence and write tools request approval', async () => {
+test('routes require a live DSH peer and write tools request approval', async () => {
   const root = await mkdtemp(join(tmpdir(), 'github-routes-'))
   const mock = await startMockMcp()
   let route
-  let fence
+  let peer
   const handlers = new Map()
   const cleanup = []
   const ctx = {
     tools: { register: () => () => {} }, logger: { info() {}, warn() {}, error() {} },
     profileContext: { patchPath: join(root, 'cordis.patch.yml') },
-    get: (name) => name === 'webServer' ? web : name === 'connection' ? fence : undefined,
+    get: (name) => name === 'webServer' ? web : undefined,
     on: (name, listener) => { handlers.set(name, listener); return () => handlers.delete(name) },
     effect: (setup) => { cleanup.push(setup()) },
   }
   const web = { register(value) { route = value; return () => { if (route === value) route = undefined } } }
-  const server = createServer((req, res) => route ? void route.handler(req, res) : res.writeHead(404).end())
+  const server = createServer((req, res) => route ? void route.handler(req, res, peer) : res.writeHead(404).end())
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${server.address().port}/plugins/github`
   try {
     apply(ctx, { serverName: 'github', url: mock.url, toolCallTimeoutMs: 2000, toolsets: 'repos,issues', readOnly: false, credentialSource: 'saved' })
-    assert.equal((await fetch(base + '/status')).status, 503)
-    fence = { requestRejection: () => 401 }
-    handlers.get('internal/service')('connection')
+    assert.equal(route.auth, 'required')
     assert.equal((await fetch(base + '/status')).status, 401)
-    fence = { requestRejection: () => undefined }
-    handlers.get('internal/service')('connection')
+    peer = { signal: AbortSignal.abort() }
+    assert.equal((await fetch(base + '/disconnect', { method: 'POST' })).status, 401)
+    peer = { signal: new AbortController().signal }
     const invalid = await fetch(base + '/connect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'token', token: 'testtoken', extra: true }) })
     assert.equal(invalid.status, 400)
     const response = await fetch(base + '/connect', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'token', token: 'testtoken' }) })
@@ -99,9 +99,9 @@ test('real DSH tool pipeline dispatches reads and denies writes without an appro
   new ToolsService(ctx)
   let route
   ctx.provide('webServer', { register(value) { route = value; return () => { route = undefined } } })
-  ctx.provide('connection', { requestRejection: () => undefined })
   const pluginCtx = ctx.extend({ profileContext: { patchPath: join(root, 'cordis.patch.yml') } })
-  const server = createServer((req, res) => route ? void route.handler(req, res) : res.writeHead(404).end())
+  const peer = { signal: new AbortController().signal }
+  const server = createServer((req, res) => route ? void route.handler(req, res, peer) : res.writeHead(404).end())
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${server.address().port}/plugins/github`
   try {

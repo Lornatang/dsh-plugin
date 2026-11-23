@@ -38,20 +38,21 @@ export function apply(ctx, config) {
     ctx.effect(() => () => bridge.dispose(), 'atlassian:connection');
     ctx.effect(() => {
         let dispose;
-        let secured = false;
+        let boundWeb;
         const bind = () => {
-            const web = (scope.get('webServer') ?? scope.get('httpServer'));
-            if (!web)
-                return;
-            const fence = scope.get('connection');
-            if (dispose && (secured || !fence))
+            const web = scope.get('webServer');
+            const webIdentity = web && (Reflect.get(web, Symbol.for('cordis.original')) ?? web);
+            if (webIdentity === boundWeb)
                 return;
             dispose?.();
-            dispose = registerRoutes(web, bridge, board, config.board, fence, connection);
-            secured = !!fence;
+            boundWeb = webIdentity;
+            dispose = web ? registerRoutes(web, bridge, board, config.board, connection) : undefined;
         };
         bind();
-        const off = scope.on?.('internal/service', bind);
+        const off = scope.on?.('internal/service', (name) => {
+            if (!name || name === 'webServer')
+                bind();
+        });
         return () => { off?.(); dispose?.(); };
     }, 'atlassian:routes');
     void bridge.start().catch((error) => ctx.logger.error(`atlassian: ${String(error)}`));

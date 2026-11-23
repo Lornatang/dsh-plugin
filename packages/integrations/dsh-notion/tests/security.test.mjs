@@ -146,22 +146,23 @@ test('credential guards run inside the store queue and preserve newer tokens', a
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-test('web routes require the DSH connection fence for reading and changing state', async () => {
-  let handler
+test('web routes require a live DSH peer for reading and changing state', async () => {
+  let route
+  let peer
   let calls = 0
-  const web = { register(route) { handler = route.handler; return () => {} } }
+  const web = { register(value) { route = value; return () => {} } }
   const bridge = { snapshot: () => ({ status: 'idle', toolCount: 0 }), authorize: async () => { calls++; return { status: 'authorizing' } }, disconnect: async () => { calls++; return { status: 'idle' } } }
-  const server = createServer((req, res) => void handler(req, res))
+  const server = createServer((req, res) => void route.handler(req, res, peer))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const origin = `http://127.0.0.1:${server.address().port}`
   try {
-    registerRoutes(web, bridge, undefined)
-    assert.equal((await fetch(origin + '/plugins/notion/status')).status, 503)
-    registerRoutes(web, bridge, { requestRejection: () => 401 })
+    registerRoutes(web, bridge)
+    assert.equal(route.auth, 'required')
     assert.equal((await fetch(origin + '/plugins/notion/status')).status, 401)
+    peer = { signal: AbortSignal.abort() }
     assert.equal((await fetch(origin + '/plugins/notion/connect', { method: 'POST' })).status, 401)
     assert.equal(calls, 0)
-    registerRoutes(web, bridge, { requestRejection: () => undefined })
+    peer = { signal: new AbortController().signal }
     const status = await fetch(origin + '/plugins/notion/status')
     assert.equal(status.status, 200)
     assert.match(status.headers.get('cache-control'), /no-store/)

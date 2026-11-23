@@ -19,7 +19,6 @@ function harness(patchPath, edit) {
     edit: edit ?? (async (entry, change) => { edits.push(change({}, undefined)) }),
   })
   registry.set('webServer', { register(route) { handler = route.handler; return () => {} } })
-  registry.set('connection', { requestRejection: () => undefined })
   const ctx = {
     tools: { register: () => () => {} },
     logger,
@@ -32,7 +31,8 @@ function harness(patchPath, edit) {
 }
 
 async function withServer(handler, run) {
-  const server = createServer((req, res) => void handler(req, res))
+  const peer = { signal: new AbortController().signal }
+  const server = createServer((req, res) => void handler(req, res, peer))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   try { await run(`http://127.0.0.1:${server.address().port}`) }
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)) }

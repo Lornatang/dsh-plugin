@@ -6,17 +6,22 @@ import { registerRoutes, ROUTE_PREFIX, REQUEST_BODY_TIMEOUT_MS } from '../lib/ro
 
 const snapshot = { status: 'idle', toolCount: 0, readOnly: false, oauthAvailable: false }
 const bridge = { snapshot: () => snapshot, connect: async () => snapshot, cancel: async () => snapshot, disconnect: async () => snapshot }
-const fence = { requestRejection: () => undefined }
-
 async function withServer(fn) {
   const server = createServer()
-  const unregister = registerRoutes({ register(route) { server.on('request', route.handler); return () => server.removeAllListeners('request') } }, bridge, fence)
+  const peer = { signal: new AbortController().signal }
+  const unregister = registerRoutes({
+    register(route) {
+      const handleRequest = (req, res) => void route.handler(req, res, peer)
+      server.on('request', handleRequest)
+      return () => server.off('request', handleRequest)
+    },
+  }, bridge)
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   try { await fn(`http://127.0.0.1:${server.address().port}`) }
   finally { unregister(); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)) }
 }
 
-test('serves status and accepts a valid fenced connect body', async () => {
+test('serves status and accepts a valid authenticated connect body', async () => {
   await withServer(async (base) => {
     const status = await fetch(`${base}${ROUTE_PREFIX}/status`)
     assert.equal(status.status, 200)

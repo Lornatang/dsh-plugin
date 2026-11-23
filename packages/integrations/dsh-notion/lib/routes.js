@@ -3,18 +3,13 @@ function respond(res, status, value) {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(value));
 }
-export function registerRoutes(web, bridge, fence) {
-    return web.register({ kind: 'prefix', path: ROUTE_PREFIX, handler: async (req, res) => {
+export function registerRoutes(web, bridge) {
+    return web.register({ kind: 'prefix', path: ROUTE_PREFIX, auth: 'required', handler: async (req, res, peer) => {
+            if (!peer || peer.signal.aborted) {
+                res.writeHead(401).end();
+                return;
+            }
             try {
-                if (!fence) {
-                    respond(res, 503, { ok: false, error: 'DSH connection service is unavailable' });
-                    return;
-                }
-                const rejection = fence.requestRejection(req);
-                if (rejection !== undefined) {
-                    res.writeHead(rejection).end();
-                    return;
-                }
                 let path;
                 try {
                     path = new URL(req.url ?? '/', 'http://localhost').pathname;

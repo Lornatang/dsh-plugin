@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { NotionBridge } from './bridge.js'
 import { Config, type Config as Settings } from './config.js'
-import { registerRoutes, type RequestFence, type RouteRegistrar } from './routes.js'
+import { registerRoutes, type RouteRegistrar } from './routes.js'
 import { SessionStore, sessionFileFor } from './store.js'
 
 export const name = 'notion'
@@ -14,11 +14,6 @@ interface Scope {
   on?(event: string, callback: (name?: string) => void): (() => void) | undefined
 }
 
-function serviceIdentity(value: unknown): unknown {
-  if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return value
-  return (value as Record<symbol, unknown>)[Symbol.for('cordis.original')] ?? value
-}
-
 export function apply(ctx: Context, config: Settings): void {
   const scope = ctx as unknown as Scope
   const store = new SessionStore(sessionFileFor(config.serverName, config.url, scope.profileContext?.patchPath))
@@ -28,23 +23,17 @@ export function apply(ctx: Context, config: Settings): void {
   ctx.effect(() => {
     let dispose: (() => void) | undefined
     let boundWeb: unknown
-    let boundFence: unknown
     const bind = (): void => {
-      const web = (scope.get('webServer') ?? scope.get('httpServer')) as RouteRegistrar | undefined
-      const fence = scope.get('connection') as RequestFence | undefined
-      const webIdentity = serviceIdentity(web)
-      const fenceIdentity = serviceIdentity(fence)
-      if (dispose && webIdentity === boundWeb && fenceIdentity === boundFence) return
+      const web = scope.get('webServer') as RouteRegistrar | undefined
+      const webIdentity: unknown = web && (Reflect.get(web, Symbol.for('cordis.original')) ?? web)
+      if (webIdentity === boundWeb) return
       dispose?.()
-      dispose = undefined
       boundWeb = webIdentity
-      boundFence = fenceIdentity
-      if (!web) return
-      dispose = registerRoutes(web, bridge, fence)
+      dispose = web ? registerRoutes(web, bridge) : undefined
     }
     bind()
     const off = scope.on?.('internal/service', (name) => {
-      if (!name || name === 'connection' || name === 'webServer' || name === 'httpServer') bind()
+      if (!name || name === 'webServer') bind()
     })
     return () => { off?.(); dispose?.() }
   }, 'notion:routes')

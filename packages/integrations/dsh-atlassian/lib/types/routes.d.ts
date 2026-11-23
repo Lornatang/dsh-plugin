@@ -5,13 +5,13 @@ import { type JiraBoard, type ToolBridge } from './board.js';
 export declare const ROUTE_PREFIX = "/plugins/atlassian";
 export interface RouteRegistrar {
     register(route: {
-        kind: 'exact' | 'prefix';
+        kind: 'prefix';
         path: string;
-        handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
+        auth: 'required';
+        handler: (req: IncomingMessage, res: ServerResponse, peer?: {
+            signal: AbortSignal;
+        }) => void | Promise<void>;
     }): () => void;
-}
-export interface RequestFence {
-    requestRejection(req: IncomingMessage): number | undefined;
 }
 export interface EditableConnection {
     snapshot(): {
@@ -31,4 +31,4 @@ export interface PluginBridge extends ToolBridge {
     start(): Promise<void>;
     dispose(): Promise<void>;
 }
-export declare function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, fence: RequestFence | undefined, connection?: EditableConnection): () => void;
+export declare function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, board: JiraBoard, options: BoardConfig, connection?: EditableConnection): () => void;

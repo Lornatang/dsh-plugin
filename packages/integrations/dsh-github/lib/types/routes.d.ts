@@ -7,11 +7,11 @@ export interface RouteRegistrar {
     register(route: {
         kind: 'prefix';
         path: string;
-        handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
+        auth: 'required';
+        handler: (req: IncomingMessage, res: ServerResponse, peer?: {
+            signal: AbortSignal;
+        }) => void | Promise<void>;
     }): () => void;
-}
-export interface RequestFence {
-    requestRejection(req: IncomingMessage): number | undefined;
 }
 export interface PluginBridge {
     snapshot(): BridgeSnapshot;
@@ -19,4 +19,4 @@ export interface PluginBridge {
     cancel(): Promise<BridgeSnapshot>;
     disconnect(): Promise<BridgeSnapshot>;
 }
-export declare function registerRoutes(web: RouteRegistrar, bridge: PluginBridge, fence: RequestFence | undefined): () => void;
+export declare function registerRoutes(web: RouteRegistrar, bridge: PluginBridge): () => void;
