@@ -48,3 +48,7 @@ To enable npm publishing, authorize `Lornatang/dsh-plugin` and
 `release.yml` as the trusted publisher for the npm packages, then set the
 GitHub Actions repository variable `PUBLISH_TO_NPM` to `true`. Stable versions
 publish to `latest`, and prereleases publish to `next`.
+
+If a GitHub Release already exists and its version is still unpublished on npm,
+run the **Release plugin** workflow on `main` with the existing release tag.
+The workflow publishes the tarball attached to that release.

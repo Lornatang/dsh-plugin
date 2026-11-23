@@ -1,14 +1,24 @@
 name: Release plugin
+run-name: Release ${{ inputs.tag || github.ref_name }}
 
 on:
   push:
     tags: ['dsh-*-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing GitHub Release to publish to npm
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   metadata:
@@ -22,12 +32,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ format('refs/tags/{0}', env.RELEASE_TAG) }}
       - name: Match the tag to one package
         id: package
         shell: bash
         run: |
           pattern='^(dsh-[a-z0-9-]+)-v([0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.+-]+)?)$'
-          [[ "$GITHUB_REF_NAME" =~ $pattern ]] || { echo "Invalid plugin release tag"; exit 1; }
+          [[ "$RELEASE_TAG" =~ $pattern ]] || { echo "Invalid plugin release tag"; exit 1; }
           plugin="${BASH_REMATCH[1]}"
           version="${BASH_REMATCH[2]}"
           mapfile -t directories < <(find packages -mindepth 2 -maxdepth 2 -type d -name "$plugin")
@@ -46,13 +57,13 @@ jobs:
 
   analyzer:
     needs: metadata
-    if: needs.metadata.outputs.plugin == 'dsh-caveman'
+    if: github.event_name == 'push' && needs.metadata.outputs.plugin == 'dsh-caveman'
     uses: ./.github/workflows/caveman-analyzer.yml
 
   release:
     needs: [metadata, analyzer]
     if: >-
-      !cancelled() && needs.metadata.result == 'success' &&
+      !cancelled() && github.event_name == 'push' && needs.metadata.result == 'success' &&
       (needs.analyzer.result == 'success' || needs.analyzer.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
@@ -109,7 +120,9 @@ jobs:
 
   npm:
     needs: [metadata, release]
-    if: vars.PUBLISH_TO_NPM == 'true'
+    if: >-
+      !cancelled() && vars.PUBLISH_TO_NPM == 'true' && needs.metadata.result == 'success' &&
+      (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.release.result == 'skipped'))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -118,6 +131,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
       ARCHIVE: ${{ needs.metadata.outputs.archive }}
+      PLUGIN: ${{ needs.metadata.outputs.plugin }}
       VERSION: ${{ needs.metadata.outputs.version }}
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -126,7 +140,12 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Download the released package
-        run: gh release download "$GITHUB_REF_NAME" --pattern "$ARCHIVE"
+        run: |
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
+          gh release download "$RELEASE_TAG" --pattern "$ARCHIVE"
+          manifest="$(tar -xOzf "$ARCHIVE" package/package.json)"
+          jq -e --arg name "@lornatang/$PLUGIN" --arg version "$VERSION" \
+            '.name == $name and .version == $version' <<< "$manifest"
       - name: Publish to npm
         run: |
           dist_tag=latest
