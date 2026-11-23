@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.16] - 2026-11-23
+
+- Require authentication for the plugin web routes on current and older DSH hosts.
+- Update the TypeScript and DSH development dependencies.
+- Publish from the shared repository using npm Trusted Publishing.
+
 ## [0.1.15] - 2026-11-21
 
 - Move the source and release metadata to the shared dsh-plugin repository.

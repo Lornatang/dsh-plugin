@@ -1,10 +1,14 @@
 # Changelog
 
+## 0.1.17 - 2026-11-23
+
+- Reserve persistent admission capacity for new sessions so any active session can sign out even when the gate is at capacity. Continue accepting unexpired legacy cookies across the upgrade.
+- Publish from the shared repository using npm Trusted Publishing.
+
 ## 0.1.16 - 2026-11-21
 
 - Move the source and release metadata to the shared dsh-plugin repository.
 - Install the bundle through the DSH CLI or plugin manager.
-- Reserve persistent admission capacity for new sessions so any active session can sign out even when the gate is at capacity. Continue accepting unexpired legacy cookies across the upgrade.
 
 ## 0.1.15 - 2026-11-19
 

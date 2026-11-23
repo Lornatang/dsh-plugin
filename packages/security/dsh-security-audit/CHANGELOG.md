@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.10
+
+- Update the TypeScript and DSH development dependencies.
+- Publish from the shared repository using npm Trusted Publishing.
+
 ## 0.1.9
 
 - Move the source and release metadata to the shared dsh-plugin repository.

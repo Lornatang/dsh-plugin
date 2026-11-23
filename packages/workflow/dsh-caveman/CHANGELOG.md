@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.11 - 2026-11-23
+
+- Keep native events local to DSH on Windows and enforce resource limits on crew operations.
+- Update the TypeScript and DSH development dependencies.
+- Publish from the shared repository using npm Trusted Publishing.
+
 ## 0.1.10 - 2026-11-21
 
 - Move the source and release metadata to the shared dsh-plugin repository.

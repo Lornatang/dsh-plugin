@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.11
+
+- Isolate output schema validators so schemas with the same identifier remain independent.
+- Publish from the shared repository using npm Trusted Publishing.
+
 ## 0.1.10
 
 - Move the source and release metadata to the shared dsh-plugin repository.

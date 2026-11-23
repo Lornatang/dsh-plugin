@@ -1,6 +1,6 @@
 {
   "name": "@lornatang/dsh-github",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Connect GitHub MCP to DeepSeek Harness agent sessions.",
   "type": "module",
   "license": "Apache-2.0",

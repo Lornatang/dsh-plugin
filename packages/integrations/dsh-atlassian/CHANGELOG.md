@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.17 - 2026-11-23
+
+- Validate connector tool output in a worker and enforce limits on discovered tools and returned data.
+- Clean up the connector and its registered tools if initialization fails.
+- Publish from the shared repository using npm Trusted Publishing.
+
 ## 0.1.16 - 2026-11-21
 
 - Move the source and release metadata to the shared dsh-plugin repository.
