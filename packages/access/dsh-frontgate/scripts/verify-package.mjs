@@ -29,7 +29,7 @@ try {
     const ctx = {
       profileContext: { patchPath: join(process.cwd(), 'cordis.patch.yml') },
       webServer: { getOrigin: () => 'http://127.0.0.1:3080', tapIndex: () => () => {} },
-      connection: { authenticatedUrl: url => url }, effect: fn => fn(),
+      emit() {}, effect: fn => fn(),
     }
     assert.equal(Config.dict.upstreamIdleTimeoutMs.meta.default, 0)
     const gate = apply(ctx, { listenPort: 0, password: 'package-test-password' })

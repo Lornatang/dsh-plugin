@@ -16,7 +16,7 @@ import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import { Config, DEFAULTS } from './config.ts'
 import { COOKIE, assertStrongPassword, hashPassword, isLegacyToken, newSessionEpoch, randomPassword, validPasswordHash } from './auth.ts'
-import { resolveLogger } from './context.ts'
+import { resolveLaunchUrl, resolveLogger } from './context.ts'
 import { cookieValue, intOr, isLoopbackHost, normalizePublicOrigin, rejectUpgrade, sameOrigin, text } from './http.ts'
 import { injectPolyfill } from './polyfill.ts'
 import { createProxy } from './proxy.ts'
@@ -27,7 +27,7 @@ import { createSessionStore, sessionDigest } from './sessions.ts'
 
 /** Cordis metadata: the plugin id shown in logs and the services it waits for. */
 export const name = 'dsh-frontgate'
-export const inject = ['webServer', 'connection']
+export const inject = ['webServer']
 
 /** Handle returned to tests and embedders; the loader ignores it. */
 export interface GateHandle {
@@ -168,7 +168,7 @@ function start(ctx: Context, config: Partial<Config>, statePath: string,
     websocketHandshakeTimeoutMs,
     upstreamCa: cfg.upstreamCaFile ? readFileSync(String(cfg.upstreamCaFile)) : undefined,
     upstreamServerName: String(cfg.upstreamServerName || ''),
-    authenticatedUrl: (baseUrl) => ctx.connection.authenticatedUrl(baseUrl),
+    launchUrl: (baseUrl) => resolveLaunchUrl(ctx, baseUrl),
     log: logger,
   })
 

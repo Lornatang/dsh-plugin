@@ -52,7 +52,7 @@ export interface ProxyOptions {
   upstreamCa?: Buffer
   upstreamServerName: string
   /** Absolute entry URL with the harness launch token attached. */
-  authenticatedUrl(baseUrl: string): string
+  launchUrl(baseUrl: string): URL
   log: LogSink
 }
 
@@ -75,7 +75,7 @@ function sendUpstreamError(res: ServerResponse): void {
 /** Build the proxy for one harness origin. */
 export function createProxy(options: ProxyOptions): Proxy {
   const { targetOrigin, publicProto, trustProxy, exchangeTimeoutMs, upstreamHeaderTimeoutMs,
-    upstreamIdleTimeoutMs, websocketHandshakeTimeoutMs, upstreamCa, upstreamServerName, authenticatedUrl, log } = options
+    upstreamIdleTimeoutMs, websocketHandshakeTimeoutMs, upstreamCa, upstreamServerName, launchUrl, log } = options
   const target = new URL(targetOrigin)
   const secureUpstream = target.protocol === 'https:'
   const transport = secureUpstream ? https : http
@@ -89,7 +89,7 @@ export function createProxy(options: ProxyOptions): Proxy {
 
   /** One GET / with the launch token; the response carries the harness cookie. */
   function exchangeHarnessCookie(): Promise<string> {
-    const url = new URL(authenticatedUrl(targetOrigin + '/'))
+    const url = launchUrl(targetOrigin + '/')
     return new Promise((resolve, reject) => {
       let settled = false
       const finish = (error: Error | undefined, cookie?: string): void => {
@@ -101,8 +101,8 @@ export function createProxy(options: ProxyOptions): Proxy {
         else resolve(cookie!)
       }
       const req = transport.request({
-        host: connectHost(url.hostname),
-        port: Number(url.port) || (secureUpstream ? 443 : 80),
+        host: connectHost(target.hostname),
+        port: Number(target.port) || (secureUpstream ? 443 : 80),
         path: url.pathname + url.search,
         method: 'GET',
         headers: { host: target.host, accept: 'text/html' },

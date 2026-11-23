@@ -29,6 +29,8 @@ The browser talks to the gate and the gate talks to the harness on loopback, so 
 
 ### Install into a profile
 
+Frontgate requires DSH `0.2.3-alpha.2` or newer.
+
 ```text
 dsh plugin --profile web add @lornatang/dsh-frontgate
 dsh plugin --profile web remove @lornatang/dsh-frontgate

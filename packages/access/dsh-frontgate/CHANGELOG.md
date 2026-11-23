@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.18 - 2026-11-23
+
+- Resolve the Web launch URL through DSH's authentication entry event. Requires DSH 0.2.3-alpha.2 or newer.
+
 ## 0.1.17 - 2026-11-23
 
 - Reserve persistent admission capacity for new sessions so any active session can sign out even when the gate is at capacity. Continue accepting unexpired legacy cookies across the upgrade.

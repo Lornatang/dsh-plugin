@@ -75,7 +75,18 @@ try {
   assert.equal(page.headers.getSetCookie().length, 0)
   const filePath = join(temp, 'frontgate-cache-check.txt')
   writeFileSync(filePath, 'frontgate integration data')
-  const file = await fetch(origin + '/api/file?path=' + encodeURIComponent(filePath), {
+  const fileUrl = new URL('/api/file', origin)
+  fileUrl.searchParams.set('path', filePath)
+  const redirect = await fetch(fileUrl, { headers: { cookie }, redirect: 'manual', signal: AbortSignal.timeout(10000) })
+  assert.equal(redirect.status, 302)
+  const location = redirect.headers.get('location')
+  assert.ok(location)
+  const versionedFileUrl = new URL(location, fileUrl)
+  assert.equal(versionedFileUrl.origin, origin)
+  assert.equal(versionedFileUrl.pathname, fileUrl.pathname)
+  assert.equal(versionedFileUrl.searchParams.get('path'), filePath)
+  assert.ok(versionedFileUrl.searchParams.get('v'))
+  const file = await fetch(versionedFileUrl, {
     headers: { cookie }, signal: AbortSignal.timeout(10000),
   })
   assert.equal(file.status, 200)

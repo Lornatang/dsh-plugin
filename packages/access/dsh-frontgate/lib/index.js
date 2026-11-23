@@ -177,6 +177,18 @@ function sessionCookie(value, seconds, useTls) {
 var clearCookie = (secure) => sessionCookie("", 0, secure);
 
 // src/context.ts
+function resolveLaunchUrl(ctx, baseUrl) {
+  const base = new URL(baseUrl);
+  const entries = [];
+  ctx.emit(ctx.webServer, "webserver/entry-url", base.href, entries);
+  for (const entry of entries) {
+    const url = URL.parse(entry.url);
+    if (!url || url.origin !== base.origin || url.pathname !== base.pathname || url.username || url.password || url.hash) continue;
+    const tokens = url.searchParams.getAll("token");
+    if (tokens.length === 1 && tokens[0]) return url;
+  }
+  throw new Error("DSH did not provide a local Web launch-token entry");
+}
 function resolveLogger() {
   const write = (message) => {
     process.stderr.write("[dsh-frontgate] " + message + "\n");
@@ -405,7 +417,7 @@ function createProxy(options) {
     websocketHandshakeTimeoutMs,
     upstreamCa,
     upstreamServerName,
-    authenticatedUrl,
+    launchUrl,
     log
   } = options;
   const target = new URL(targetOrigin);
@@ -417,7 +429,7 @@ function createProxy(options) {
   const exchanges = /* @__PURE__ */ new Set();
   let activeHttp = 0;
   function exchangeHarnessCookie() {
-    const url = new URL(authenticatedUrl(targetOrigin + "/"));
+    const url = launchUrl(targetOrigin + "/");
     return new Promise((resolve, reject) => {
       let settled = false;
       const finish = (error, cookie) => {
@@ -429,8 +441,8 @@ function createProxy(options) {
         else resolve(cookie);
       };
       const req = transport.request({
-        host: connectHost(url.hostname),
-        port: Number(url.port) || (secureUpstream ? 443 : 80),
+        host: connectHost(target.hostname),
+        port: Number(target.port) || (secureUpstream ? 443 : 80),
         path: url.pathname + url.search,
         method: "GET",
         headers: { host: target.host, accept: "text/html" },
@@ -1342,7 +1354,7 @@ function createSessionStore(path, state, ttlSeconds, onRevoke) {
 
 // src/index.ts
 var name = "dsh-frontgate";
-var inject = ["webServer", "connection"];
+var inject = ["webServer"];
 function apply(ctx, config = {}) {
   const statePath = statePathFor(ctx.profileContext?.patchPath);
   const releaseStateLock = acquireStateLock(statePath);
@@ -1456,7 +1468,7 @@ function start(ctx, config, statePath, releaseProfile, bindSessionCleanup) {
     websocketHandshakeTimeoutMs,
     upstreamCa: cfg.upstreamCaFile ? readFileSync2(String(cfg.upstreamCaFile)) : void 0,
     upstreamServerName: String(cfg.upstreamServerName || ""),
-    authenticatedUrl: (baseUrl) => ctx.connection.authenticatedUrl(baseUrl),
+    launchUrl: (baseUrl) => resolveLaunchUrl(ctx, baseUrl),
     log: logger
   });
   const handler = createHandler({

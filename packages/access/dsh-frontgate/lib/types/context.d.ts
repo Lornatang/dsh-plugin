@@ -1,10 +1,7 @@
 /**
- * Structural view of the harness services this plugin talks to.
- *
- * The gate only runs inside the web profile, so the web server and the
- * connection service are always present. Declaring the two interfaces here
- * keeps the plugin typed without depending on the host packages at build time.
+ * Structural view of the harness Web service and authentication entry event.
  */
+import type { Context } from '@deepseek-ai/cordis';
 /** Minimal surface of the harness web server used by the gate. */
 export interface WebServerView {
     /** Host the harness listener is bound to, when the host service exposes it. */
@@ -16,10 +13,10 @@ export interface WebServerView {
     /** Register an index.html transform; the returned function unregisters it. */
     tapIndex(transform: (html: string) => string): () => void;
 }
-/** Minimal surface of the harness connection service used by the gate. */
-export interface ConnectionView {
-    /** Absolute URL of the entry document with the launch token attached. */
-    authenticatedUrl(baseUrl: string): string;
+interface WebEntryUrl {
+    label: string;
+    url: string;
+    open: boolean;
 }
 /** Profile location reported by the harness loader. */
 export interface ProfileContextView {
@@ -29,10 +26,14 @@ export interface ProfileContextView {
 declare module '@deepseek-ai/cordis' {
     interface Context {
         webServer: WebServerView;
-        connection: ConnectionView;
         profileContext?: ProfileContextView;
     }
+    interface Events {
+        'webserver/entry-url'(this: WebServerView, baseUrl: string, entries: WebEntryUrl[]): void;
+    }
 }
+/** Collect an entry from the host's authentication provider for each exchange. */
+export declare function resolveLaunchUrl(ctx: Context, baseUrl: string): URL;
 /** Logger subset used by the gate; lines are written to stderr. */
 export interface LogSink {
     info(message: string): void;
@@ -45,3 +46,4 @@ export interface LogSink {
  * listen address logged there would never reach the operator.
  */
 export declare function resolveLogger(): LogSink;
+export {};

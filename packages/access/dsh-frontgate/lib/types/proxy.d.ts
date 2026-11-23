@@ -17,7 +17,7 @@ export interface ProxyOptions {
     upstreamCa?: Buffer;
     upstreamServerName: string;
     /** Absolute entry URL with the harness launch token attached. */
-    authenticatedUrl(baseUrl: string): string;
+    launchUrl(baseUrl: string): URL;
     log: LogSink;
 }
 /** Proxy surface used by the request and upgrade handlers. */

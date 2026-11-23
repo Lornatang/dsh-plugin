@@ -29,6 +29,8 @@ kind: "package-bundle"
 
 ### 安装到 profile
 
+Frontgate 需要 DSH `0.2.3-alpha.2` 或更新版本。
+
 ```text
 dsh plugin --profile web add @lornatang/dsh-frontgate
 dsh plugin --profile web remove @lornatang/dsh-frontgate

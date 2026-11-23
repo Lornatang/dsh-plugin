@@ -26,7 +26,9 @@ function startGate(dir, upstream, extra = {}) {
   const ctx = {
     profileContext: { patchPath: join(dir, 'cordis.patch.yml') },
     webServer: { getOrigin: () => `http://127.0.0.1:${upstream.address().port}`, tapIndex: () => () => {} },
-    connection: { authenticatedUrl: (base) => `${base}?token=mock` },
+    emit(_service, _event, base, entries) {
+      entries.push({ label: 'dsh web', url: `${base}?token=mock`, open: true })
+    },
     effect: (fn) => fn(),
   }
   return apply(ctx, { listenPort: 0, password, ...extra })

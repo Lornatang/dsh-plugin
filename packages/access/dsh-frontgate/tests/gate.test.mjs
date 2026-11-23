@@ -188,8 +188,11 @@ function makeCtx(upstreamPort, dir) {
         }
       },
     },
-    connection: {
-      authenticatedUrl: (base) => base + (base.includes('?') ? '&' : '?') + 'token=launch-token',
+    emit(service, event, base, entries) {
+      assert.equal(service, ctx.webServer)
+      assert.equal(event, 'webserver/entry-url')
+      assert.equal(base, ctx.webServer.getOrigin() + '/')
+      entries.push({ label: 'dsh web', url: base + '?token=launch-token', open: true })
     },
     effect(fn) {
       const disposer = fn()
@@ -808,7 +811,7 @@ test('an abruptly terminated process releases the profile lock without losing se
     const port = Number(process.argv[2])
     const ctx = { profileContext: { patchPath: join(process.argv[1], 'cordis.patch.yml') },
       webServer: { getOrigin: () => 'http://127.0.0.1:' + port, tapIndex: () => () => {} },
-      connection: { authenticatedUrl: url => url }, effect: fn => fn() }
+      emit() {}, effect: fn => fn() }
     const gate = apply(ctx, { listenPort: 0, passwordHash: process.argv[3] })
     await gate.ready(); process.stdout.write('READY\\n')
   `
@@ -1358,7 +1361,7 @@ test('a generated password is printed once and remains valid after restart', asy
     const ctx = {
       profileContext: { patchPath: join(process.argv[1], 'cordis.patch.yml') },
       webServer: { getOrigin: () => 'http://127.0.0.1:1', tapIndex: () => () => {} },
-      connection: { authenticatedUrl: url => url },
+      emit() {},
       effect: fn => fn(),
     }
     const gate = apply(ctx, { listenPort: 0 })
@@ -1725,9 +1728,10 @@ test('a synchronous launch URL error does not permanently cache a failed exchang
   const upstream = await startUpstream()
   const made = makeCtx(upstream.port, dir)
   let calls = 0
-  made.ctx.connection.authenticatedUrl = (base) => {
+  const emit = made.ctx.emit
+  made.ctx.emit = (...args) => {
     if (++calls === 1) throw new Error('simulated launch URL error')
-    return base + '?token=launch-token'
+    emit(...args)
   }
   const gate = apply(made.ctx, { listenPort: 0, passwordHash: HASH })
   await gate.ready()
@@ -1737,6 +1741,45 @@ test('a synchronous launch URL error does not permanently cache a failed exchang
   assert.equal((await request(port, '/api/sessions', { headers: { cookie } })).res.status, 503)
   assert.equal((await request(port, '/api/sessions', { headers: { cookie } })).res.status, 200)
   assert.equal(calls, 2)
+})
+
+test('Frontgate only exchanges a launch token at the harness root on its own origin', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'frontgate-'))
+  const upstream = await startUpstream()
+  const other = await startUpstream()
+  const made = makeCtx(upstream.port, dir)
+  const emit = made.ctx.emit
+  let providerReady = false
+  made.ctx.emit = (service, event, base, entries) => {
+    const invalid = [
+      'http://127.0.0.1:' + other.port + '/?token=foreign',
+      base + 'api/sessions?token=wrong-path',
+      base + '?token=first&token=second',
+      base,
+    ]
+    entries.push(...invalid.map(url => ({ label: 'other', url, open: true })))
+    if (providerReady) emit(service, event, base, entries)
+  }
+  const gate = apply(made.ctx, { listenPort: 0, passwordHash: HASH })
+  await gate.ready()
+  t.after(async () => {
+    gate.stop()
+    made.dispose()
+    await Promise.all([upstream.close(), other.close()])
+    rmSync(dir, { recursive: true, force: true })
+  })
+  const port = gate.address().port
+  const { cookie } = await login(port)
+  const unavailable = await request(port, '/', { headers: { cookie } })
+  assert.equal(unavailable.res.status, 503)
+  assert.deepEqual(JSON.parse(unavailable.body), { error: 'harness_unavailable' })
+  assert.equal(upstream.seen.length, 0)
+  assert.equal(other.seen.length, 0)
+
+  providerReady = true
+  assert.equal((await request(port, '/', { headers: { cookie } })).res.status, 200)
+  assert.equal(upstream.seen[0].url, '/?token=launch-token')
+  assert.equal(other.seen.length, 0)
 })
 
 test('cross-origin proxy requests are refused', async (t) => {
@@ -1860,7 +1903,7 @@ test('permission failures reject exposed state but permit an already private fil
     const { apply } = await import('./lib/index.js')
     const ctx = { profileContext: { patchPath: join(process.argv[1], 'cordis.patch.yml') },
       webServer: { getOrigin: () => 'http://127.0.0.1:1', tapIndex: () => () => {} },
-      connection: { authenticatedUrl: url => url }, effect: fn => fn() }
+      emit() {}, effect: fn => fn() }
     try { const gate = apply(ctx, { listenPort: 0 }); await gate.ready(); gate.stop() }
     catch (error) { console.error(error.message); process.exitCode = 1 }
   `
@@ -1889,7 +1932,7 @@ test('failed atomic replacement leaves the original state intact', async (t) => 
     const { apply } = await import('./lib/index.js')
     const ctx = { profileContext: { patchPath: join(process.argv[1], 'cordis.patch.yml') },
       webServer: { getOrigin: () => 'http://127.0.0.1:1', tapIndex: () => () => {} },
-      connection: { authenticatedUrl: url => url }, effect: fn => fn() }
+      emit() {}, effect: fn => fn() }
     try { apply(ctx, { password: 'a-new-strong-password' }) } catch (error) { console.error(error.message); process.exitCode = 1 }
   `
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, dir], {
