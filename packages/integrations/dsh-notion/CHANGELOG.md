@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.14 - 2026-11-23
+
+- Use host authentication for connector routes. Requires DeepSeek Harness 0.2.3-alpha.2 or newer.
+
 ## 0.1.13 - 2026-11-23
 
 - Update the TypeScript and DSH development dependencies.

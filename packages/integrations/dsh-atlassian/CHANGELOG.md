@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.18 - 2026-11-23
+
+- Use host authentication for connector routes. Requires DeepSeek Harness 0.2.3-alpha.2 or newer.
+
 ## 0.1.17 - 2026-11-23
 
 - Validate connector tool output in a worker and enforce limits on discovered tools and returned data.

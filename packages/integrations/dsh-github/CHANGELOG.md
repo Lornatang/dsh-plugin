@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12
+
+- Use host authentication for connector routes. Requires DeepSeek Harness 0.2.3-alpha.2 or newer.
+
 ## 0.1.11
 
 - Isolate output schema validators so schemas with the same identifier remain independent.
