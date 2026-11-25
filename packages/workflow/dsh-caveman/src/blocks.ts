@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { isAbsolute, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-working-directory'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -59,7 +59,7 @@ export function registerBlocks(ctx: Context, binary: string): void {
       typeof exec.arguments.command !== 'string') return next()
     let hint: string | undefined
     try {
-      const directory = ctx.get('workingDirectory') as { ensure(agent: Agent, signal: AbortSignal): Promise<string> } | undefined
+      const directory = ctx.get('workingDirectory')
       const base = directory ? await directory.ensure(exec.agent, exec.signal) : exec.agent.session.header.cwd
       if (base && isAbsolute(base)) {
         const requested = 'workdir' in exec.arguments && typeof exec.arguments.workdir === 'string' ? exec.arguments.workdir : '.'

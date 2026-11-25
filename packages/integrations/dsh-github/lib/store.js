@@ -7,12 +7,10 @@ export function sessionFileFor(serverName, url, patchPath) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(serverName)) {
         throw new Error('github: serverName must contain only letters, numbers, underscores or hyphens');
     }
-    // Never fall back to a shared profile: credentials must not cross profiles.
     if (!patchPath)
         throw new Error('github: the active DSH profile is unknown; refusing to share credentials between profiles');
-    const profilePatch = patchPath;
     const digest = createHash('sha256').update(url).digest('hex').slice(0, 12);
-    return join(dirname(profilePatch), 'data', `dsh-github-${serverName}-${digest}.json`);
+    return join(dirname(patchPath), 'data', `dsh-github-${serverName}-${digest}.json`);
 }
 /** Ensure another local user cannot replace any component of the data path. */
 async function secureDirectory(directory, create) {
@@ -134,9 +132,7 @@ export class SessionStore {
     get current() { return this.#value; }
     async load() {
         return this.#serialize(async () => {
-            if (!await secureDirectory(dirname(this.#file), false))
-                return this.#value = { version: 1 };
-            const handle = await secureExistingFile(this.#file);
+            const handle = await secureDirectory(dirname(this.#file), false) ? await secureExistingFile(this.#file) : undefined;
             if (!handle)
                 return this.#value = { version: 1 };
             let raw;
@@ -180,8 +176,7 @@ export class SessionStore {
             const scopes = record['oauthScopes'];
             if (Array.isArray(scopes) && scopes.every((scope) => typeof scope === 'string'))
                 session.oauthScopes = scopes;
-            this.#value = session;
-            return this.#value;
+            return this.#value = session;
         });
     }
     async patch(patch, active) {
@@ -254,9 +249,10 @@ export class SessionStore {
                     await entry.setPassword(encoded);
                 }
             }
-            if (!encoded || !/^[A-Za-z0-9+/]{43}=$/.test(encoded) || Buffer.from(encoded, 'base64').length !== 32) {
+            if (!encoded || !/^[A-Za-z0-9+/]{43}=$/.test(encoded)) {
                 throw new Error('encryption key must be a base64-encoded 32-byte value');
             }
+            // A base64 value with 43 data characters and one padding character decodes to 32 bytes.
             return this.#key = Buffer.from(encoded, 'base64');
         }
         catch (error) {

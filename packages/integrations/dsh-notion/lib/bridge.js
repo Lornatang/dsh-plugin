@@ -44,6 +44,12 @@ function display(content) {
         return block['type'] === 'text' && typeof block['text'] === 'string' ? block['text'] : `[${String(block['type'] ?? 'unknown')} content]`;
     }).filter(Boolean).join('\n\n');
 }
+function toolOutput() {
+    return {
+        schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
+        render: (_args, result) => [{ type: 'text', text: display(result?.content) }],
+    };
+}
 export class NotionBridge {
     #host;
     #options;
@@ -81,8 +87,6 @@ export class NotionBridge {
     #setUrl(url) { this.#url = url; this.#notify(); }
     #notify() { for (const wake of [...this.#waiters])
         wake(); }
-    // Event-driven replacement for fixed-interval polling: resolves as soon as
-    // the predicate holds, or when the deadline passes, whichever comes first.
     async #waitState(predicate, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         while (!predicate()) {
@@ -166,9 +170,7 @@ export class NotionBridge {
             this.#setUrl(undefined);
             this.#launch(true, this.#generation, true);
         }
-        // Wait for a reportable state: the authorization URL is published while
-        // the status is still 'connecting', so waking on the URL alone would
-        // return a mid-transition snapshot to concurrent callers.
+        // The SDK publishes the authorization URL before the bridge is ready to return it.
         await this.#waitState(() => this.#status !== 'connecting', 20_000);
         return this.snapshot();
     }
@@ -387,23 +389,19 @@ export class NotionBridge {
             if (cursor)
                 seen.add(cursor);
         } while (cursor);
-        const names = new Set();
+        const namedTools = new Map();
         for (const tool of found) {
             const name = publicToolName(this.#options.serverName, tool.name);
-            if (names.has(name))
+            if (namedTools.has(name))
                 throw new Error('MCP server returned duplicate tool names');
-            names.add(name);
+            namedTools.set(name, tool);
         }
         this.#clearTools();
         try {
-            for (const tool of found) {
-                const name = publicToolName(this.#options.serverName, tool.name);
+            for (const [name, tool] of namedTools) {
                 const definition = {
                     name, description: tool.description ?? '', parameters: tool.inputSchema,
-                    output: {
-                        schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
-                        render: (_args, result) => [{ type: 'text', text: display(result?.content) }],
-                    },
+                    output: toolOutput(),
                     execute: async (args, context) => {
                         const combined = context.signal ? AbortSignal.any([signal, context.signal]) : signal;
                         const result = await this.#request(client, combined, () => client.callTool({ name: tool.name, arguments: (typeof args === 'object' && args !== null ? args : {}) }, undefined, { timeout: this.#options.toolCallTimeoutMs, signal: combined }));
@@ -418,7 +416,7 @@ export class NotionBridge {
                         return { content };
                     },
                 };
-                this.#tools.set(name, { raw: tool.name, dispose: this.#host.register(definition) });
+                this.#tools.set(name, this.#host.register(definition));
             }
             if (client.getServerCapabilities()?.resources)
                 this.#registerResourceTools(client, signal);
@@ -436,17 +434,14 @@ export class NotionBridge {
                 throw new Error(`MCP resource tool name conflicts with a server tool: ${name}`);
             const definition = {
                 name, description, parameters,
-                output: {
-                    schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
-                    render: (_args, result) => [{ type: 'text', text: display(result?.content) }],
-                },
+                output: toolOutput(),
                 execute: async (args, context) => {
                     const signal = context.signal ? AbortSignal.any([connectionSignal, context.signal]) : connectionSignal;
                     const value = await this.#request(client, signal, () => action(args ?? {}, signal));
                     return { content: [{ type: 'text', text: JSON.stringify(value) }] };
                 },
             };
-            this.#tools.set(name, { raw, dispose: this.#host.register(definition) });
+            this.#tools.set(name, this.#host.register(definition));
         };
         const options = (signal) => ({ timeout: this.#options.toolCallTimeoutMs, signal });
         const cursor = (args) => typeof args['cursor'] === 'string' ? { cursor: args['cursor'] } : {};
@@ -514,9 +509,9 @@ export class NotionBridge {
     }
     #clearTools() {
         let failure;
-        for (const value of this.#tools.values()) {
+        for (const dispose of this.#tools.values()) {
             try {
-                value.dispose();
+                dispose();
             }
             catch (error) {
                 failure ??= error;

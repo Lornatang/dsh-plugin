@@ -2,7 +2,7 @@ import type {
   CoverageDocument, CoverageSurface, DraftFinding, DraftReviewState, DraftSurface, Finding, FindingsDocument, ScanDraftInput,
   ScanRecord, Severity, Confidence, Disposition, FindingStatus,
 } from './types.js'
-import { DISPOSITIONS, SEVERITIES, SEVERITY_SCORE } from './types.js'
+import { DISPOSITIONS, EMPTY_SEVERITY_COUNTS, SEVERITIES, SEVERITY_SCORE } from './types.js'
 import { compareSeverity, normalizeLine, sanitizeRelative, sha256, slugify, stableTargetId } from './util.js'
 import { VERSION } from './constants.js'
 
@@ -223,7 +223,7 @@ export function buildFindingsDocument(scanId: string, findings: Finding[]): Find
 }
 
 export function severityCounts(findings: Finding[]): Record<Severity, number> {
-  const counts: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, informational: 0 }
+  const counts: Record<Severity, number> = { ...EMPTY_SEVERITY_COUNTS }
   for (const finding of findings) counts[finding.severity.level] = (counts[finding.severity.level] ?? 0) + 1
   return counts
 }
@@ -285,8 +285,7 @@ function coverageMode(scan: ScanRecord): string {
   if (scan.mode === 'deep') return 'deep_repository'
   const kind = scan.target.kind
   if (kind === 'git_diff') return scan.target.workingTree ? 'working_tree' : scan.target.baseRevision ? 'branch_diff' : 'diff'
-  if (kind === 'directory_snapshot') return scan.scope.includePaths.includes('.') ? 'repository' : 'scoped_path'
-  if (kind === 'git_worktree') return scan.scope.includePaths.includes('.') ? 'repository' : 'scoped_path'
+  if (kind === 'directory_snapshot' || kind === 'git_worktree') return scan.scope.includePaths.includes('.') ? 'repository' : 'scoped_path'
   return 'repository'
 }
 

@@ -357,7 +357,7 @@ test("CLI preserves generic oneOf results for custom JSON schemas", () => {
   ];
   try {
     fs.copyFileSync(validatorPath, cli);
-    for (const helper of ["bounded-input.cjs", "windows-safe-input.cjs"]) {
+    for (const helper of ["bounded-input.cjs", "windows-safe-input.cjs", "validation-helpers.cjs"]) {
       fs.copyFileSync(path.join(__dirname, helper), path.join(directory, helper));
     }
     for (const { branches, item } of cases) {

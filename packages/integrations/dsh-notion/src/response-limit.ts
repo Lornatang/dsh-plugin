@@ -4,6 +4,10 @@ export const MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 type LimitExceeded = () => void
 
 function limitStream(body: ReadableStream<Uint8Array>, maxBytes: number, events: boolean, onLimit: LimitExceeded, onEvent?: () => void): ReadableStream<Uint8Array> {
+  const exceedLimit = (): never => {
+    onLimit()
+    throw new Error('notion: MCP response exceeds the byte limit')
+  }
   let size = 0
   let lineHasBytes = false
   let lineStartSize = 0
@@ -13,24 +17,20 @@ function limitStream(body: ReadableStream<Uint8Array>, maxBytes: number, events:
   return body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       if (events) {
-        // SSE events end at a blank line. Handle CR, LF and CRLF, including
-        // separators split across network chunks, without buffering an event.
-        // Comment (keepalive) lines do not count toward the per-event byte
-        // budget, but they DO count as events: otherwise a server could flood
-        // bare ": ..." lines forever, bypassing both the byte and rate limits.
+        // Track CRLF across chunks without buffering events. Keepalive bytes
+        // are discarded after the line, which still counts toward the rate limit.
         let index = 0
         while (index < chunk.length) {
           const byte = chunk[index]!
           if (byte === 10 && previousCR) {
             previousCR = false
-            if (!discardFollowingLF && ++size > maxBytes) { onLimit(); throw new Error('notion: MCP response exceeds the byte limit') }
+            if (!discardFollowingLF && ++size > maxBytes) exceedLimit()
             lineStartSize = size
             index++
             continue
           }
           if (byte !== 13 && byte !== 10) {
-            // Scan both line endings in one pass and stop at the first byte
-            // that could exceed the budget.
+            // Stop at the first byte that could exceed the budget.
             const start = index++
             const end = Math.min(chunk.length, start + Math.floor(maxBytes - size) + 1)
             while (index < end) {
@@ -41,11 +41,11 @@ function limitStream(body: ReadableStream<Uint8Array>, maxBytes: number, events:
             if (!lineHasBytes) comment = byte === 58
             lineHasBytes = true
             size += index - start
-            if (size > maxBytes) { onLimit(); throw new Error('notion: MCP response exceeds the byte limit') }
+            if (size > maxBytes) exceedLimit()
             previousCR = false
             continue
           }
-          if (++size > maxBytes) { onLimit(); throw new Error('notion: MCP response exceeds the byte limit') }
+          if (++size > maxBytes) exceedLimit()
           discardFollowingLF = !lineHasBytes || comment
           if (!lineHasBytes) { onEvent?.(); size = 0 }
           else if (comment) { size = lineStartSize; onEvent?.() }
@@ -57,7 +57,7 @@ function limitStream(body: ReadableStream<Uint8Array>, maxBytes: number, events:
         }
       } else {
         size += chunk.byteLength
-        if (size > maxBytes) { onLimit(); throw new Error('notion: MCP response exceeds the byte limit') }
+        if (size > maxBytes) exceedLimit()
       }
       controller.enqueue(chunk)
     },

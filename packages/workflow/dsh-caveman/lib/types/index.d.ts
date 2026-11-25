@@ -30,5 +30,4 @@ export interface Config {
     };
 }
 export declare const Config: z<Config>;
-/** Register skills and reinforce the selected mode per session. */
 export declare function apply(ctx: Context, config?: Config): void;

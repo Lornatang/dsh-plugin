@@ -280,8 +280,7 @@ function sameOrigin(req, publicOrigin, useTls) {
   return originMatchesHost(req, publicOrigin, useTls);
 }
 function safeNext(value) {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/";
-  if (value.includes("\\") || /[\u0000-\u001f\u007f]/.test(value)) return "/";
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\") || /[\u0000-\u001f\u007f]/.test(value)) return "/";
   return value;
 }
 var ENTITIES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -318,36 +317,31 @@ function readForm(req) {
     let size = 0;
     let settled = false;
     const chunks = [];
-    const finish = (fn, value) => {
+    const complete = (error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      fn(value);
-    };
-    const fail = (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(error);
+      if (error) reject(error);
+      else resolve(Buffer.concat(chunks).toString("utf8"));
     };
     const timer = setTimeout(() => {
-      fail(new Error("timeout"));
+      complete(new Error("timeout"));
       req.resume();
     }, FORM_TIMEOUT);
     req.on("data", (chunk) => {
       if (settled) return;
       size += chunk.length;
       if (size > MAX_FORM) {
-        fail(new Error("too large"));
+        complete(new Error("too large"));
         req.resume();
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => finish(resolve, Buffer.concat(chunks).toString("utf8")));
-    req.on("error", (err) => fail(err));
+    req.on("end", () => complete());
+    req.on("error", complete);
     req.on("close", () => {
-      if (!req.complete) fail(new Error("aborted"));
+      if (!req.complete) complete(new Error("aborted"));
     });
   });
 }
@@ -367,25 +361,7 @@ import http from "node:http";
 import https from "node:https";
 var HARNESS_COOKIE_TTL = 25 * 60 * 1e3;
 var MAX_UPSTREAM_HTTP = 128;
-var REQUEST_DROP = /* @__PURE__ */ new Set([
-  "host",
-  "origin",
-  "cookie",
-  "connection",
-  "keep-alive",
-  "proxy-connection",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "transfer-encoding",
-  "upgrade",
-  "te",
-  "trailer",
-  "x-forwarded-for",
-  "x-forwarded-proto",
-  "x-forwarded-host"
-]);
-var RESPONSE_DROP = /* @__PURE__ */ new Set([
-  "set-cookie",
+var HOP_HEADERS = [
   "connection",
   "keep-alive",
   "proxy-connection",
@@ -395,9 +371,27 @@ var RESPONSE_DROP = /* @__PURE__ */ new Set([
   "upgrade",
   "te",
   "trailer"
+];
+var REQUEST_DROP = /* @__PURE__ */ new Set([
+  ...HOP_HEADERS,
+  "host",
+  "origin",
+  "cookie",
+  "x-forwarded-for",
+  "x-forwarded-proto",
+  "x-forwarded-host"
 ]);
+var RESPONSE_DROP = /* @__PURE__ */ new Set([...HOP_HEADERS, "set-cookie"]);
 function connectionHeaders(value) {
   return new Set((Array.isArray(value) ? value.join(",") : value || "").split(",").map((part) => part.trim().toLowerCase()).filter(Boolean));
+}
+function filterHeaders(headers, drop) {
+  const connection = connectionHeaders(headers.connection);
+  const filtered = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!drop.has(key) && !connection.has(key)) filtered[key] = value;
+  }
+  return filtered;
 }
 function sendUpstreamError(res) {
   if (res.headersSent) {
@@ -426,6 +420,11 @@ function createProxy(options) {
   const AgentClass = secureUpstream ? https.Agent : http.Agent;
   const upstreamAgent = new AgentClass({ keepAlive: true, maxSockets: MAX_UPSTREAM_HTTP, keepAliveMsecs: 1e3 });
   const tlsOptions = secureUpstream ? { ...upstreamCa ? { ca: upstreamCa } : {}, ...upstreamServerName ? { servername: upstreamServerName } : {} } : {};
+  const upstreamAddress = {
+    host: connectHost(target.hostname),
+    port: Number(target.port) || (secureUpstream ? 443 : 80),
+    ...tlsOptions
+  };
   const exchanges = /* @__PURE__ */ new Set();
   let activeHttp = 0;
   function exchangeHarnessCookie() {
@@ -441,13 +440,11 @@ function createProxy(options) {
         else resolve(cookie);
       };
       const req = transport.request({
-        host: connectHost(target.hostname),
-        port: Number(target.port) || (secureUpstream ? 443 : 80),
+        ...upstreamAddress,
         path: url.pathname + url.search,
         method: "GET",
         headers: { host: target.host, accept: "text/html" },
-        agent: upstreamAgent,
-        ...tlsOptions
+        agent: upstreamAgent
       }, (res) => {
         res.resume();
         const status = res.statusCode ?? 0;
@@ -483,11 +480,7 @@ function createProxy(options) {
     return harnessInflight;
   }
   function upstreamHeaders(req, cookie) {
-    const out = {};
-    const connection = connectionHeaders(req.headers.connection);
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (!REQUEST_DROP.has(key) && !connection.has(key)) out[key] = value;
-    }
+    const out = filterHeaders(req.headers, REQUEST_DROP);
     out.host = target.host;
     if (req.headers.origin !== void 0) out.origin = target.origin;
     if (cookie) out.cookie = cookie;
@@ -497,14 +490,12 @@ function createProxy(options) {
     return out;
   }
   function rewriteLocation(value) {
-    if (value.startsWith("//") || value.startsWith("/\\")) return "/";
-    if (!value.startsWith(targetOrigin)) return value;
-    const rest = value.slice(targetOrigin.length);
-    if (rest === "") return "/";
-    if (rest.startsWith("//") || rest.startsWith("/\\")) return "/";
-    if (rest.startsWith("/")) return rest;
-    if (rest.startsWith("?") || rest.startsWith("#")) return "/" + rest;
-    return value;
+    const matchesOrigin = value.startsWith(targetOrigin);
+    const path = matchesOrigin ? value.slice(targetOrigin.length) : value;
+    if (path.startsWith("//") || path.startsWith("/\\")) return "/";
+    if (!matchesOrigin) return value;
+    if (!path || path.startsWith("?") || path.startsWith("#")) return "/" + path;
+    return path.startsWith("/") ? path : value;
   }
   function forward(req, res, cookie) {
     if (activeHttp >= MAX_UPSTREAM_HTTP) {
@@ -528,12 +519,10 @@ function createProxy(options) {
     };
     const proxyReq = transport.request({
       agent: upstreamAgent,
-      host: connectHost(target.hostname),
-      port: Number(target.port) || (secureUpstream ? 443 : 80),
+      ...upstreamAddress,
       method: req.method,
       path: req.url,
-      headers: upstreamHeaders(req, cookie),
-      ...tlsOptions
+      headers: upstreamHeaders(req, cookie)
     }, (proxyRes) => {
       if (headerTimer) clearTimeout(headerTimer);
       headerTimer = void 0;
@@ -541,14 +530,9 @@ function createProxy(options) {
         proxyRes.destroy();
         return;
       }
-      const headers = {};
-      const connection = connectionHeaders(proxyRes.headers.connection);
-      for (const [key, value] of Object.entries(proxyRes.headers)) {
-        if (!RESPONSE_DROP.has(key) && !connection.has(key)) headers[key] = value;
-      }
+      const headers = filterHeaders(proxyRes.headers, RESPONSE_DROP);
       headers["cache-control"] = "private, no-store";
-      const location = proxyRes.headers["location"];
-      if (location !== void 0 && !connection.has("location")) headers.location = rewriteLocation(location);
+      if (headers.location !== void 0) headers.location = rewriteLocation(headers.location);
       const status = proxyRes.statusCode || 502;
       if (status === 401) invalidateHarnessCookie(cookie);
       res.writeHead(status, headers);
@@ -608,13 +592,11 @@ function createProxy(options) {
     headers.upgrade = requested;
     const proxyReq = transport.request({
       agent: false,
-      host: connectHost(target.hostname),
-      port: Number(target.port) || (secureUpstream ? 443 : 80),
+      ...upstreamAddress,
       method: req.method,
       path: req.url,
       headers,
-      maxHeaderSize: 16384,
-      ...tlsOptions
+      maxHeaderSize: 16384
     });
     let backend;
     let finished = false;
@@ -777,53 +759,33 @@ function createHandler(options) {
   const failures = /* @__PURE__ */ new Map();
   const clientsInFlight = /* @__PURE__ */ new Set();
   const pendingForms = /* @__PURE__ */ new Map();
-  let checksInFlight = 0;
-  function evictPartial(now) {
+  function lockRemaining(ip) {
+    const now = Date.now();
+    const entry = failures.get(ip);
+    if (entry) {
+      if (entry.expiresAt > now || clientsInFlight.has(ip)) return Math.max(0, entry.until - now);
+      failures.delete(ip);
+    }
+    if (failures.size < MAX_TRACKED_CLIENTS) return 0;
+    let earliest = Infinity;
+    let oldestPartial = Infinity;
     let victim;
-    let oldest = Infinity;
     for (const [client, failure] of failures) {
-      if (failure.until > now || clientsInFlight.has(client)) continue;
-      if (failure.expiresAt < oldest) {
-        oldest = failure.expiresAt;
+      const inFlight = clientsInFlight.has(client);
+      if (failure.expiresAt <= now && !inFlight) {
+        failures.delete(client);
+        continue;
+      }
+      earliest = Math.min(earliest, failure.expiresAt);
+      if (!inFlight && failure.until <= now && failure.expiresAt < oldestPartial) {
+        oldestPartial = failure.expiresAt;
         victim = client;
       }
     }
-    if (victim === void 0) return false;
+    if (failures.size < MAX_TRACKED_CLIENTS) return 0;
+    if (victim === void 0) return Math.max(1e3, earliest - now);
     failures.delete(victim);
-    return true;
-  }
-  function lockRemaining(ip) {
-    const now = Date.now();
-    let entry = failures.get(ip);
-    if (entry && entry.expiresAt <= now && !clientsInFlight.has(ip)) {
-      failures.delete(ip);
-      entry = void 0;
-    }
-    if (entry) return Math.max(0, entry.until - now);
-    if (failures.size < MAX_TRACKED_CLIENTS) return 0;
-    let earliest = Infinity;
-    for (const [client, failure] of failures) {
-      if (failure.expiresAt <= now && !clientsInFlight.has(client)) failures.delete(client);
-      else earliest = Math.min(earliest, failure.expiresAt);
-    }
-    if (failures.size < MAX_TRACKED_CLIENTS) return 0;
-    if (evictPartial(now)) return 0;
-    return Math.max(1e3, earliest - now);
-  }
-  function recordFailure(ip) {
-    let entry = failures.get(ip);
-    if (!entry) {
-      if (failures.size >= MAX_TRACKED_CLIENTS && !evictPartial(Date.now())) return;
-      entry = { count: 0, until: 0, expiresAt: 0 };
-      failures.set(ip, entry);
-    }
-    const now = Date.now();
-    entry.count += 1;
-    entry.expiresAt = now + lockMs;
-    if (entry.count >= maxAttempts) {
-      entry.count = 0;
-      entry.until = entry.expiresAt;
-    }
+    return 0;
   }
   function sessionOf(req) {
     const token = cookieValue(req.headers.cookie, COOKIE);
@@ -869,25 +831,29 @@ function createHandler(options) {
       }
       const remaining = lockRemaining(ip);
       if (remaining > 0) return text(res, 429, "too many attempts\n", { "retry-after": String(Math.ceil(remaining / 1e3)) });
-      if (clientsInFlight.has(ip) || checksInFlight >= CHECK_CONCURRENCY) {
+      if (clientsInFlight.has(ip) || clientsInFlight.size >= CHECK_CONCURRENCY) {
         return text(res, 429, "busy, retry shortly\n", { "retry-after": "1" });
       }
-      const reserved = !failures.has(ip);
-      if (reserved) failures.set(ip, { count: 0, until: 0, expiresAt: Date.now() + lockMs });
+      const previous = failures.get(ip);
+      const failure = previous ?? { count: 0, until: 0, expiresAt: Date.now() + lockMs };
+      if (!previous) failures.set(ip, failure);
       clientsInFlight.add(ip);
-      checksInFlight += 1;
-      let ok = false;
+      let ok;
       try {
         ok = await verifyPassword(new URLSearchParams(form).get("password") || "", passwordHash);
       } catch (err) {
-        if (reserved) failures.delete(ip);
+        if (!previous) failures.delete(ip);
         throw err;
       } finally {
-        checksInFlight -= 1;
         clientsInFlight.delete(ip);
       }
       if (!ok) {
-        recordFailure(ip);
+        failure.count += 1;
+        failure.expiresAt = Date.now() + lockMs;
+        if (failure.count >= maxAttempts) {
+          failure.count = 0;
+          failure.until = failure.expiresAt;
+        }
         log.info("login failed from " + ip);
         return html(res, 401, loginPage(title, next, "Wrong password."));
       }
@@ -939,9 +905,10 @@ function createHandler(options) {
       return redirect(res, "/__gate/login");
     }
     if (path.startsWith("/__gate/")) return text(res, 404, "not found\n");
+    const isApi = path === "/api" || path.startsWith("/api/");
     const token = cookieValue(req.headers.cookie, COOKIE);
     const unauthorized = () => {
-      if (path === "/api" || path.startsWith("/api/")) {
+      if (isApi) {
         return json(res, 401, { error: "unauthorized", login: "/__gate/login" });
       }
       return redirect(res, "/__gate/login?next=" + encodeURIComponent(raw));
@@ -949,7 +916,7 @@ function createHandler(options) {
     if (!token || !validSession(token)) return unauthorized();
     if (!sameOrigin(req, publicOrigin, useTls)) {
       log.warn("cross-origin request blocked: " + String(req.method) + " " + path);
-      if (path === "/api" || path.startsWith("/api/")) return json(res, 403, { error: "forbidden" });
+      if (isApi) return json(res, 403, { error: "forbidden" });
       return text(res, 403, "forbidden\n");
     }
     if (!options.admit(req, res, token)) return;

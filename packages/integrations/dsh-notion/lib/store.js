@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, parse, resolve, sep } from 'node:path';
+const alwaysActive = () => true;
 /** Keep credentials separate for each DSH profile and server. */
 export function sessionFileFor(serverName, url, patchPath) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(serverName)) {
@@ -161,49 +162,30 @@ export class SessionStore {
         });
     }
     async patch(patch, active) {
-        await this.#serialize(async () => {
-            if (active && !active())
-                throw new Error('notion: connection cancelled');
-            const next = { ...this.#value, ...patch, version: 1 };
-            await this.#flush(next);
-            this.#value = next;
-        });
+        await this.#update(active ?? alwaysActive, { patch });
     }
     async saveTokens(tokens, active, expected) {
-        await this.#serialize(async () => {
-            if (!active())
-                throw new Error('notion: connection cancelled');
-            // A concurrent refresh may already have rotated the credentials.
-            if (expected && this.#value.tokens !== expected)
-                return;
-            const next = { ...this.#value, tokens, version: 1 };
-            await this.#flush(next);
-            this.#value = next;
-        });
+        await this.#update(active, { patch: { tokens }, expected });
     }
     async clearCredentialsIf(active, expected, ...fields) {
-        await this.#serialize(async () => {
-            if (!active())
-                throw new Error('notion: connection cancelled');
-            if (expected && this.#value.tokens !== expected)
-                return;
-            const next = { ...this.#value, version: 1 };
-            for (const field of fields)
-                if (field !== 'version')
-                    delete next[field];
-            await this.#flush(next);
-            this.#value = next;
-        });
+        await this.#update(active, { fields, expected });
     }
     async clear(...fields) {
         await this.clearIf(undefined, ...fields);
     }
     async clearIf(active, ...fields) {
-        await this.#serialize(async () => {
-            if (active && !active())
+        await this.#update(active ?? alwaysActive, { fields });
+    }
+    #update(active, change) {
+        return this.#serialize(async () => {
+            if (!active())
                 throw new Error('notion: connection cancelled');
-            const next = { ...this.#value, version: 1 };
-            for (const field of fields)
+            const { patch, fields, expected } = change;
+            // A concurrent refresh may already have rotated the credentials.
+            if (expected && this.#value.tokens !== expected)
+                return;
+            const next = { ...this.#value, ...patch, version: 1 };
+            for (const field of fields ?? [])
                 if (field !== 'version')
                     delete next[field];
             await this.#flush(next);

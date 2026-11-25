@@ -10,7 +10,6 @@ const NAMES = [
     'caveman-manage', 'caveman-optimize', 'caveman-evidence-review', 'caveman-setup',
     'investigate-first', 'lean-build', 'migration', 'safe-refactor', 'surgical-patch', 'verify-and-stop',
 ];
-const knownNames = new Set(NAMES);
 async function readSkill(root, name, signal) {
     const path = join(root, name, 'SKILL.md');
     const raw = await readFile(path, { encoding: 'utf8', signal });
@@ -30,7 +29,6 @@ async function readSkill(root, name, signal) {
         userInvocable: fields['user-invocable'] !== false,
     };
 }
-/** Expose skills through the DSH provider registry. */
 export function createSkillProvider(root, control) {
     if (!isAbsolute(root))
         throw new Error('dsh-caveman: skill root must be absolute');
@@ -48,13 +46,11 @@ export function createSkillProvider(root, control) {
                 };
             }));
             signal?.throwIfAborted();
-            return {
-                candidates: results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []),
-                complete: results.every(result => result.status === 'fulfilled'),
-            };
+            const candidates = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+            return { candidates, complete: candidates.length === results.length };
         },
         async get(candidate, { signal }) {
-            if (!knownNames.has(candidate.name) || candidate.locator !== candidate.name)
+            if (!NAMES.includes(candidate.name) || candidate.locator !== candidate.name)
                 return undefined;
             try {
                 const { content } = await readSkill(root, candidate.name, signal);

@@ -21,10 +21,11 @@ export type ConnectInput = {
     source: 'gh' | 'oauth';
 };
 export type BridgeStatus = 'idle' | 'connecting' | 'authorizing' | 'ready' | 'error';
+type CredentialSource = 'token' | 'gh' | 'env' | 'oauth';
 export interface BridgeSnapshot {
     status: BridgeStatus;
     toolCount: number;
-    source?: 'token' | 'gh' | 'env' | 'oauth';
+    source?: CredentialSource;
     error?: string;
     warning?: string;
     readOnly: boolean;
@@ -48,3 +49,4 @@ export declare class GithubBridge {
     disconnect(): Promise<BridgeSnapshot>;
     dispose(): Promise<void>;
 }
+export {};

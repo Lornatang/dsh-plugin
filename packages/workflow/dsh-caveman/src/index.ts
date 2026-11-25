@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-mcp-manager'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import { createSkillProvider } from './skills.js'
 import { defaultModeFor, getReinforce, SessionModeTracker, type DefaultMode, type VoiceMode } from './mode.js'
 import { registerCompression } from './compression.js'
@@ -16,7 +16,7 @@ import { statsReport } from './stats.js'
 import { findCavemanBinary, guardedRuntimeFetch, runtimeSettings, verifiedRuntime } from './runtime.js'
 import { registerMemoryRecovery } from './memory.js'
 import { registerAttribution } from './attribution.js'
-import { registerNative } from './native.js'
+import { isCavecrewPreset, registerNative } from './native.js'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -27,6 +27,7 @@ declare module '@deepseek-ai/dsh-llm' {
 
 export const name = 'caveman'
 export const inject = ['skills', 'tools', 'systemPrompt', 'llm']
+const DEFAULT_ENDPOINT = 'http://127.0.0.1:8787'
 
 export interface Config {
   defaultMode?: DefaultMode
@@ -43,7 +44,7 @@ export const Config: z<Config> = z.object({
     z.const('caveman'), z.const('ultracave'), z.const('megacave'), z.const('off'), z.const('manual'),
   ]),
   inputCompression: z.boolean(),
-  middlewareEndpoint: z.string().default('http://127.0.0.1:8787'),
+  middlewareEndpoint: z.string().default(DEFAULT_ENDPOINT),
   blocksBinary: z.string().min(1),
   browseBinary: z.string().min(1),
   mcpBinary: z.string().min(1),
@@ -51,13 +52,13 @@ export const Config: z<Config> = z.object({
   codeMode: z.union([z.const(false), z.object({ config: z.string().required(), workspace: z.string().required() })]).default(false),
 })
 
-/** Register skills and reinforce the selected mode per session. */
 export function apply(ctx: Context, config: Config = {}): void {
   const root = fileURLToPath(new URL('../vendor/caveman/skills/', import.meta.url))
   const modes = new SessionModeTracker()
   const settings = runtimeSettings()
-  registerAttribution(ctx, config.middlewareEndpoint ?? 'http://127.0.0.1:8787')
-  registerNative(ctx, config.middlewareEndpoint ?? 'http://127.0.0.1:8787', { mode: settings.nativeMode, profile: settings.nativeProfile, core: settings.core })
+  const endpoint = config.middlewareEndpoint ?? DEFAULT_ENDPOINT
+  registerAttribution(ctx, endpoint)
+  registerNative(ctx, endpoint, { mode: settings.nativeMode, profile: settings.nativeProfile, core: settings.core })
   if (settings.core) {
     let core = readFileSync(new URL('../vendor/caveman/skills/native/native-core.md', import.meta.url), 'utf8').trim()
     if (settings.coreLeanBuild) {
@@ -69,13 +70,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       name: 'caveman:core', order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 10, interpolate: false,
       text: context => {
         const preset = context.agent && ctx.get('agentPresets')?.composedPreset(context.agent.ctx)
-        return preset === 'cavecrew-investigator' || preset === 'cavecrew-builder' || preset === 'cavecrew-reviewer' ? '' : core
+        return isCavecrewPreset(preset) ? '' : core
       },
     })
   }
   ctx.skills.registerProvider(control => createSkillProvider(root, control))
   if (config.inputCompression !== false && settings.input) {
-    const endpoint = config.middlewareEndpoint ?? 'http://127.0.0.1:8787'
     const automatic = config.inputCompression === true ? undefined : {
       fetch: guardedRuntimeFetch(endpoint), available: (signal: AbortSignal) => verifiedRuntime(endpoint, process.env, signal),
     }
@@ -113,14 +113,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const preset = ctx.get('agentPresets')?.composedPreset(agent.ctx)
-    if (preset === 'cavecrew-investigator' || preset === 'cavecrew-builder' || preset === 'cavecrew-reviewer') return decision
+    if (isCavecrewPreset(preset)) return decision
     const directMessages = decision.messages.filter(message => message.source.kind === 'user')
     if (directMessages.length === 0) return decision
     signal.throwIfAborted()
-    const statsRequest = directMessages.map(message => message.content
-      .filter(block => block.type === 'text').map(block => block.text).join('\n'))
-      .map(text => /^\/caveman(?::caveman)?-stats(?:\s+(.*))?$/u.exec(text.trim()))
-      .reverse().find(match => match !== null)
+    const statsRequest = directMessages.map(message => {
+      const text = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+      return /^\/caveman(?::caveman)?-stats(?:\s+(.*))?$/u.exec(text.trim())
+    }).reverse().find(match => match !== null)
     if (statsRequest) {
       const report = await statsReport(ctx, agent.session, statsRequest[1]?.trim() ?? '', signal)
       const reminder = createUserMessage({
@@ -129,7 +129,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       })
       return { ...decision, messages: [...decision.messages, reminder] }
     }
-    const directory = ctx.get('workingDirectory') as { ensure(agent: Agent, signal: AbortSignal): Promise<string> } | undefined
+    const directory = ctx.get('workingDirectory')
     const cwd = directory ? await directory.ensure(agent, signal) : agent.session.header.cwd
     const selected = modes.resolve(defaultModeFor(config.defaultMode, cwd), agent.session, directMessages)
     if (selected.action === 'one-shot' || (selected.mode === 'off' && selected.action === 'none')) return decision

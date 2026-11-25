@@ -1,9 +1,7 @@
 import type { Finding, ScanRecord, ScanSummary, TriageEntry } from './types.js';
 export interface ScanIndex {
     version: 1;
-    scans: Record<string, ScanSummary & {
-        repoKey: string;
-    }>;
+    scans: Record<string, ScanSummary>;
 }
 export interface CreateScanInput {
     scanId: string;
@@ -35,7 +33,6 @@ export declare class ScanStore {
     scanDir(record: Pick<ScanRecord, 'repoKey' | 'scanId'>): string;
     init(): Promise<void>;
     private serialize;
-    /** Cheap identity of index.json so a changed on-disk index invalidates the cache. */
     private indexFileStamp;
     private readIndex;
     loadIndex(): Promise<ScanIndex>;
@@ -49,6 +46,7 @@ export declare class ScanStore {
         record: ScanRecord;
         dir: string;
     } | undefined>;
+    private requireScan;
     update(scanId: string, mutate: (record: ScanRecord) => void, options?: {
         signal?: AbortSignal;
         publish?: (commit: () => Promise<void>) => Promise<void>;

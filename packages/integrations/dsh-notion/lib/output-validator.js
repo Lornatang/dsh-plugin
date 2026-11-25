@@ -42,12 +42,8 @@ function release() {
     next.signal.removeEventListener('abort', next.abort);
     next.resolve();
 }
-// Validation workers are pooled: spawning a worker per tool call made every
-// structured result pay the full SDK + AJV module-load cost again. Idle
-// workers are unref'd and reaped so they never keep the host process alive.
-// Schema objects are stable for the lifetime of a discovered tool. A numeric id
-// lets a warm worker reuse the compiled validator without re-sending (and
-// structured-cloning) the schema on every call.
+// Stable schema IDs let warm workers reuse validators without cloning schemas
+// for every call. Idle workers are unref'd and reaped.
 const schemaIds = new WeakMap();
 let nextSchemaId = 1;
 function schemaIdOf(schema) {
@@ -188,7 +184,6 @@ export async function validateOutput(schema, value, timeoutMs, signal) {
                     abort();
                     return;
                 }
-                // Send the schema only when this worker has not compiled it yet.
                 const schemaId = schemaIdOf(schema);
                 const cached = schemaId !== undefined && entry.schemas.has(schemaId);
                 entry.pendingSchema = schemaId;
@@ -201,7 +196,6 @@ export async function validateOutput(schema, value, timeoutMs, signal) {
             retire(entry);
             throw error;
         }
-        // Normal results — including validation failures — keep the worker warm.
         park(entry);
         if (!result.valid)
             throw new Error(`notion: structured output does not match its schema: ${result.error ?? 'invalid output'}`);

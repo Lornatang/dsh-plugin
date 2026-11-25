@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.19 - 2026-11-25
+
+- Share upstream proxy setup and consolidate login attempt tracking and form cleanup.
+
 ## 0.1.18 - 2026-11-23
 
 - Resolve the Web launch URL through DSH's authentication entry event. Requires DSH 0.2.3-alpha.2 or newer.

@@ -5,14 +5,13 @@ import { parse as parseYaml } from 'yaml'
 
 const PROVIDER = 'dsh-caveman'
 const RANK = 600
-const NAMES = [
+const NAMES: readonly string[] = [
   'caveman', 'ultracave', 'megacave', 'caveman-help',
   'caveman-commit', 'caveman-review', 'caveman-compress', 'caveman-stats',
   'cavecrew', 'caveman-discover', 'caveman-explore', 'caveman-learn',
   'caveman-manage', 'caveman-optimize', 'caveman-evidence-review', 'caveman-setup',
   'investigate-first', 'lean-build', 'migration', 'safe-refactor', 'surgical-patch', 'verify-and-stop',
-] as const
-const knownNames: ReadonlySet<string> = new Set(NAMES)
+]
 type SkillRead = { description: string; content: string; modelInvocable: boolean; userInvocable: boolean }
 
 async function readSkill(root: string, name: string, signal?: AbortSignal): Promise<SkillRead> {
@@ -34,7 +33,6 @@ async function readSkill(root: string, name: string, signal?: AbortSignal): Prom
   }
 }
 
-/** Expose skills through the DSH provider registry. */
 export function createSkillProvider(root: string, control?: SkillProviderControl): SkillProvider {
   if (!isAbsolute(root)) throw new Error('dsh-caveman: skill root must be absolute')
   return {
@@ -51,13 +49,11 @@ export function createSkillProvider(root: string, control?: SkillProviderControl
         }
       }))
       signal?.throwIfAborted()
-      return {
-        candidates: results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []),
-        complete: results.every(result => result.status === 'fulfilled'),
-      }
+      const candidates = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+      return { candidates, complete: candidates.length === results.length }
     },
     async get(candidate, { signal }): Promise<SkillDefinition | undefined> {
-      if (!knownNames.has(candidate.name) || candidate.locator !== candidate.name) return undefined
+      if (!NAMES.includes(candidate.name) || candidate.locator !== candidate.name) return undefined
       try {
         const { content } = await readSkill(root, candidate.name, signal)
         const { rank: _rank, locator: _locator, ...summary } = candidate

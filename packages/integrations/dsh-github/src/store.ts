@@ -17,11 +17,9 @@ export function sessionFileFor(serverName: string, url: string, patchPath?: stri
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(serverName)) {
     throw new Error('github: serverName must contain only letters, numbers, underscores or hyphens')
   }
-  // Never fall back to a shared profile: credentials must not cross profiles.
   if (!patchPath) throw new Error('github: the active DSH profile is unknown; refusing to share credentials between profiles')
-  const profilePatch = patchPath
   const digest = createHash('sha256').update(url).digest('hex').slice(0, 12)
-  return join(dirname(profilePatch), 'data', `dsh-github-${serverName}-${digest}.json`)
+  return join(dirname(patchPath), 'data', `dsh-github-${serverName}-${digest}.json`)
 }
 
 /** Ensure another local user cannot replace any component of the data path. */
@@ -117,8 +115,7 @@ export class SessionStore {
 
   async load(): Promise<StoredSession> {
     return this.#serialize(async () => {
-      if (!await secureDirectory(dirname(this.#file), false)) return this.#value = { version: 1 }
-      const handle = await secureExistingFile(this.#file)
+      const handle = await secureDirectory(dirname(this.#file), false) ? await secureExistingFile(this.#file) : undefined
       if (!handle) return this.#value = { version: 1 }
       let raw: string
       try { raw = await handle.readFile('utf8') } finally { await handle.close() }
@@ -150,8 +147,7 @@ export class SessionStore {
       if (typeof record['oauthExpiresAt'] === 'number' && Number.isFinite(record['oauthExpiresAt'])) session.oauthExpiresAt = record['oauthExpiresAt']
       const scopes = record['oauthScopes']
       if (Array.isArray(scopes) && scopes.every((scope: unknown) => typeof scope === 'string')) session.oauthScopes = scopes as string[]
-      this.#value = session
-      return this.#value
+      return this.#value = session
     })
   }
 
@@ -219,9 +215,10 @@ export class SessionStore {
           await entry.setPassword(encoded)
         }
       }
-      if (!encoded || !/^[A-Za-z0-9+/]{43}=$/.test(encoded) || Buffer.from(encoded, 'base64').length !== 32) {
+      if (!encoded || !/^[A-Za-z0-9+/]{43}=$/.test(encoded)) {
         throw new Error('encryption key must be a base64-encoded 32-byte value')
       }
+      // A base64 value with 43 data characters and one padding character decodes to 32 bytes.
       return this.#key = Buffer.from(encoded, 'base64')
     } catch (error) {
       throw new Error('github: secure key storage is unavailable; unlock the system keychain or set DSH_GITHUB_ENCRYPTION_KEY to a persistent base64-encoded 32-byte key', { cause: error })

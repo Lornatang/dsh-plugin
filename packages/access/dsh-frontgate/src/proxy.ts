@@ -1,13 +1,6 @@
-/**
- * Reverse proxy towards the harness listener.
- *
- * Request headers are rewritten so the harness sees a same-origin request from
- * itself, the launch cookie is exchanged server-side and never reaches the
- * browser, and WebSocket upgrades are spliced at the TCP level.
- */
 import http from 'node:http'
 import https from 'node:https'
-import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
+import type { IncomingHttpHeaders, IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { clientIp, connectHost, rejectUpgrade, text } from './http.ts'
 import type { LogSink } from './context.ts'
@@ -17,23 +10,28 @@ const HARNESS_COOKIE_TTL = 25 * 60 * 1000
 /** Keep admission bounded before requests reach the agent's internal queue. */
 const MAX_UPSTREAM_HTTP = 128
 
-/** Headers that describe this hop or the browser, never the upstream request. */
-const REQUEST_DROP = new Set([
-  'host', 'origin', 'cookie', 'connection', 'keep-alive', 'proxy-connection',
-  'proxy-authenticate', 'proxy-authorization', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'x-forwarded-for',
-  'x-forwarded-proto', 'x-forwarded-host',
-])
-
-/** Response headers that belong to the upstream connection, plus credentials. */
-const RESPONSE_DROP = new Set([
-  'set-cookie', 'connection', 'keep-alive', 'proxy-connection', 'proxy-authenticate',
+const HOP_HEADERS = [
+  'connection', 'keep-alive', 'proxy-connection', 'proxy-authenticate',
   'proxy-authorization', 'transfer-encoding', 'upgrade', 'te', 'trailer',
+]
+const REQUEST_DROP = new Set([
+  ...HOP_HEADERS, 'host', 'origin', 'cookie', 'x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host',
 ])
+const RESPONSE_DROP = new Set([...HOP_HEADERS, 'set-cookie'])
 
 /** Connection can name additional hop-by-hop headers, regardless of case. */
 function connectionHeaders(value: string | string[] | undefined): Set<string> {
   return new Set((Array.isArray(value) ? value.join(',') : value || '')
     .split(',').map((part) => part.trim().toLowerCase()).filter(Boolean))
+}
+
+function filterHeaders(headers: IncomingHttpHeaders, drop: ReadonlySet<string>): IncomingHttpHeaders {
+  const connection = connectionHeaders(headers.connection)
+  const filtered: IncomingHttpHeaders = {}
+  for (const [key, value] of Object.entries(headers)) {
+    if (!drop.has(key) && !connection.has(key)) filtered[key] = value
+  }
+  return filtered
 }
 
 /** Options needed to reach and describe the harness listener. */
@@ -84,6 +82,11 @@ export function createProxy(options: ProxyOptions): Proxy {
   const tlsOptions = secureUpstream
     ? { ...(upstreamCa ? { ca: upstreamCa } : {}), ...(upstreamServerName ? { servername: upstreamServerName } : {}) }
     : {}
+  const upstreamAddress = {
+    host: connectHost(target.hostname),
+    port: Number(target.port) || (secureUpstream ? 443 : 80),
+    ...tlsOptions,
+  }
   const exchanges = new Set<http.ClientRequest>()
   let activeHttp = 0
 
@@ -101,13 +104,11 @@ export function createProxy(options: ProxyOptions): Proxy {
         else resolve(cookie!)
       }
       const req = transport.request({
-        host: connectHost(target.hostname),
-        port: Number(target.port) || (secureUpstream ? 443 : 80),
+        ...upstreamAddress,
         path: url.pathname + url.search,
         method: 'GET',
         headers: { host: target.host, accept: 'text/html' },
         agent: upstreamAgent,
-        ...tlsOptions,
       }, (res) => {
         res.resume()
         // Only a successful bootstrap may hand out a harness cookie: a 4xx/5xx
@@ -156,11 +157,7 @@ export function createProxy(options: ProxyOptions): Proxy {
   }
 
   function upstreamHeaders(req: IncomingMessage, cookie: string): OutgoingHttpHeaders {
-    const out: OutgoingHttpHeaders = {}
-    const connection = connectionHeaders(req.headers.connection)
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (!REQUEST_DROP.has(key) && !connection.has(key)) out[key] = value
-    }
+    const out = filterHeaders(req.headers, REQUEST_DROP)
     out.host = target.host
     if (req.headers.origin !== undefined) out.origin = target.origin
     if (cookie) out.cookie = cookie
@@ -171,22 +168,14 @@ export function createProxy(options: ProxyOptions): Proxy {
   }
 
   function rewriteLocation(value: string): string {
-    // A bare protocol-relative Location ('//host', '/\\host') is resolved by
-    // the browser against the current scheme and leaves this origin; only the
-    // target-origin-prefixed form was normalised before.
-    if (value.startsWith('//') || value.startsWith('/\\')) return '/'
-    if (!value.startsWith(targetOrigin)) return value
-    const rest = value.slice(targetOrigin.length)
-    if (rest === '') return '/'
-    // '//host' is protocol-relative and '\\host' is treated as '//host' by
-    // browsers; both would leave this origin.
-    if (rest.startsWith('//') || rest.startsWith('/\\')) return '/'
-    // Only a path, query or fragment delimiter still belongs to this origin.
-    // Anything else ('.evil.com', '@evil.com', ...) is a different authority
-    // and passes through as an external URL.
-    if (rest.startsWith('/')) return rest
-    if (rest.startsWith('?') || rest.startsWith('#')) return '/' + rest
-    return value
+    const matchesOrigin = value.startsWith(targetOrigin)
+    const path = matchesOrigin ? value.slice(targetOrigin.length) : value
+    // Browsers resolve both slash forms as a new authority.
+    if (path.startsWith('//') || path.startsWith('/\\')) return '/'
+    if (!matchesOrigin) return value
+    if (!path || path.startsWith('?') || path.startsWith('#')) return '/' + path
+    // A matching prefix can still belong to a different authority.
+    return path.startsWith('/') ? path : value
   }
 
   function forward(req: IncomingMessage, res: ServerResponse, cookie: string): void {
@@ -209,25 +198,18 @@ export function createProxy(options: ProxyOptions): Proxy {
     }
     const proxyReq = transport.request({
       agent: upstreamAgent,
-      host: connectHost(target.hostname),
-      port: Number(target.port) || (secureUpstream ? 443 : 80),
+      ...upstreamAddress,
       method: req.method,
       path: req.url,
       headers: upstreamHeaders(req, cookie),
-      ...tlsOptions,
     }, (proxyRes) => {
       if (headerTimer) clearTimeout(headerTimer)
       headerTimer = undefined
       if (res.destroyed) { proxyRes.destroy(); return }
-      const headers: OutgoingHttpHeaders = {}
-      const connection = connectionHeaders(proxyRes.headers.connection)
-      for (const [key, value] of Object.entries(proxyRes.headers)) {
-        if (!RESPONSE_DROP.has(key) && !connection.has(key)) headers[key] = value
-      }
+      const headers = filterHeaders(proxyRes.headers, RESPONSE_DROP)
       // A browser must not reuse authenticated data after the gate session ends.
       headers['cache-control'] = 'private, no-store'
-      const location = proxyRes.headers['location']
-      if (location !== undefined && !connection.has('location')) headers.location = rewriteLocation(location)
+      if (headers.location !== undefined) headers.location = rewriteLocation(headers.location)
       const status = proxyRes.statusCode || 502
       if (status === 401) invalidateHarnessCookie(cookie)
       res.writeHead(status, headers)
@@ -280,13 +262,11 @@ export function createProxy(options: ProxyOptions): Proxy {
     headers.upgrade = requested
     const proxyReq = transport.request({
       agent: false,
-      host: connectHost(target.hostname),
-      port: Number(target.port) || (secureUpstream ? 443 : 80),
+      ...upstreamAddress,
       method: req.method,
       path: req.url,
       headers,
       maxHeaderSize: 16384,
-      ...tlsOptions,
     })
     let backend: Duplex | undefined
     let finished = false

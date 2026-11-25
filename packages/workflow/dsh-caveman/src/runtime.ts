@@ -6,6 +6,11 @@ import { Readable } from 'node:stream'
 
 type Binary = 'blocks' | 'browse' | 'mcp' | 'memory'
 type Module = 'scripts' | 'browse' | 'input'
+export const NATIVE_PROFILES: ReadonlySet<string> = new Set(['record-only', 'core', 'core-lean-build', 'ledger', 'ccr-masking', 'cache-aware', 'full-safe', 'full-max'])
+
+export function cavemanHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.CAVEMAN_HOME ?? join(homedir(), '.caveman')
+}
 
 function executable(path: string): boolean {
   try {
@@ -43,7 +48,7 @@ export function findCavemanBinary(kind: Binary, configured?: string, env: NodeJS
   const onPath = pathCommand(name, env)
   if (onPath) return onPath
   const filename = process.platform === 'win32' ? `${name}.exe` : name
-  const local = resolve(env.CAVEMAN_HOME ?? join(homedir(), '.caveman'), 'bin', filename)
+  const local = resolve(cavemanHome(env), 'bin', filename)
   return executable(local) ? local : undefined
 }
 
@@ -53,9 +58,8 @@ function object(value: unknown): Record<string, unknown> {
 
 function configDocument(env: NodeJS.ProcessEnv): Record<string, unknown> {
   try {
-    const home = env.CAVEMAN_HOME ?? join(homedir(), '.caveman')
     let raw: string
-    try { raw = readFileSync(join(home, 'cloud.json'), 'utf8') } catch (error) {
+    try { raw = readFileSync(join(cavemanHome(env), 'cloud.json'), 'utf8') } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       raw = readFileSync(join(homedir(), '.caveman-cloud', 'config.json'), 'utf8')
     }
@@ -72,7 +76,6 @@ function booleanSetting(value: unknown): boolean | undefined {
   return undefined
 }
 
-/** Read the module switches and native coding policy in one configuration snapshot. */
 export function runtimeSettings(env: NodeJS.ProcessEnv = process.env): { input: boolean; scripts: boolean; browse: boolean; mcp: boolean; memory: boolean; core: boolean; coreLeanBuild: boolean; nativeMode: 'record' | 'safe' | 'max'; nativeProfile: string } {
   const document = configDocument(env)
   const modules = object(document.modules)
@@ -86,15 +89,15 @@ export function runtimeSettings(env: NodeJS.ProcessEnv = process.env): { input: 
   const mcp = mcpMode !== 'marker-only' && booleanSetting(mcpMode) !== false
   const memory = booleanSetting(object(document.remember).mem) ?? true
   const configuredCore = booleanSetting(env.CAVEMAN_CORE) ?? booleanSetting(think.core ?? wrap.core) ?? explicit(modules.output) ?? true
-  const profile = env.CAVEMAN_NATIVE_PROFILE?.trim().toLowerCase()
-  const profiles = ['record-only', 'core', 'core-lean-build', 'ledger', 'ccr-masking', 'cache-aware', 'full-safe', 'full-max']
+  const profile = env.CAVEMAN_NATIVE_PROFILE?.trim().toLowerCase() ?? ''
+  const supportedProfile = NATIVE_PROFILES.has(profile)
   const configuredMode = env.CAVEMAN_NATIVE_MODE?.trim().toLowerCase()
   const proxyMode = env.CAVEMAN_WRAP_MODE ?? think.mode ?? wrap.mode ?? 'compress'
-  const nativeMode: 'record' | 'safe' | 'max' = profile && !profiles.includes(profile) || profile === 'record-only'
+  const nativeMode: 'record' | 'safe' | 'max' = profile && !supportedProfile || profile === 'record-only'
     ? 'record'
     : configuredMode ? configuredMode === 'safe' || configuredMode === 'max' ? configuredMode : 'record'
       : proxyMode === 'record' ? 'record' : proxyMode === 'pixel' ? 'max' : 'safe'
-  const nativeProfile = profile && profiles.includes(profile) ? profile : nativeMode === 'record' ? 'record-only' : nativeMode === 'max' ? 'full-max' : 'full-safe'
+  const nativeProfile = supportedProfile ? profile : nativeMode === 'record' ? 'record-only' : nativeMode === 'max' ? 'full-max' : 'full-safe'
   const core = configuredCore && nativeMode !== 'record' && nativeProfile !== 'record-only'
   return { input, scripts, browse, mcp, memory, core, coreLeanBuild: core && nativeProfile === 'core-lean-build', nativeMode, nativeProfile }
 }
@@ -104,7 +107,7 @@ export function moduleEnabled(kind: Module, env: NodeJS.ProcessEnv = process.env
   return runtimeSettings(env)[kind]
 }
 
-function localOrigin(endpoint: string): URL | undefined {
+export function localOrigin(endpoint: string): URL | undefined {
   try {
     const url = new URL(endpoint)
     if (url.protocol !== 'http:' || url.username || url.password || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return undefined
@@ -147,7 +150,7 @@ async function directLocalFetch(input: Parameters<typeof fetch>[0], init?: Reque
 
 /** Verify that the loopback listener matches the runtime's private run-state record. */
 export async function verifiedRuntime(endpoint: string, env: NodeJS.ProcessEnv = process.env, signal?: AbortSignal): Promise<boolean> {
-  return Boolean(await verifiedRuntimeInstance(endpoint, env.CAVEMAN_HOME ?? join(homedir(), '.caveman'), signal))
+  return Boolean(await verifiedRuntimeInstance(endpoint, cavemanHome(env), signal))
 }
 
 export interface VerifiedRuntimeInstance { readonly record: string; readonly token: string }

@@ -3,6 +3,10 @@ import { request as httpRequest } from 'node:http';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
+export const NATIVE_PROFILES = new Set(['record-only', 'core', 'core-lean-build', 'ledger', 'ccr-masking', 'cache-aware', 'full-safe', 'full-max']);
+export function cavemanHome(env = process.env) {
+    return env.CAVEMAN_HOME ?? join(homedir(), '.caveman');
+}
 function executable(path) {
     try {
         accessSync(path, constants.X_OK);
@@ -45,7 +49,7 @@ export function findCavemanBinary(kind, configured, env = process.env) {
     if (onPath)
         return onPath;
     const filename = process.platform === 'win32' ? `${name}.exe` : name;
-    const local = resolve(env.CAVEMAN_HOME ?? join(homedir(), '.caveman'), 'bin', filename);
+    const local = resolve(cavemanHome(env), 'bin', filename);
     return executable(local) ? local : undefined;
 }
 function object(value) {
@@ -53,10 +57,9 @@ function object(value) {
 }
 function configDocument(env) {
     try {
-        const home = env.CAVEMAN_HOME ?? join(homedir(), '.caveman');
         let raw;
         try {
-            raw = readFileSync(join(home, 'cloud.json'), 'utf8');
+            raw = readFileSync(join(cavemanHome(env), 'cloud.json'), 'utf8');
         }
         catch (error) {
             if (error.code !== 'ENOENT')
@@ -81,7 +84,6 @@ function booleanSetting(value) {
         return false;
     return undefined;
 }
-/** Read the module switches and native coding policy in one configuration snapshot. */
 export function runtimeSettings(env = process.env) {
     const document = configDocument(env);
     const modules = object(document.modules);
@@ -95,15 +97,15 @@ export function runtimeSettings(env = process.env) {
     const mcp = mcpMode !== 'marker-only' && booleanSetting(mcpMode) !== false;
     const memory = booleanSetting(object(document.remember).mem) ?? true;
     const configuredCore = booleanSetting(env.CAVEMAN_CORE) ?? booleanSetting(think.core ?? wrap.core) ?? explicit(modules.output) ?? true;
-    const profile = env.CAVEMAN_NATIVE_PROFILE?.trim().toLowerCase();
-    const profiles = ['record-only', 'core', 'core-lean-build', 'ledger', 'ccr-masking', 'cache-aware', 'full-safe', 'full-max'];
+    const profile = env.CAVEMAN_NATIVE_PROFILE?.trim().toLowerCase() ?? '';
+    const supportedProfile = NATIVE_PROFILES.has(profile);
     const configuredMode = env.CAVEMAN_NATIVE_MODE?.trim().toLowerCase();
     const proxyMode = env.CAVEMAN_WRAP_MODE ?? think.mode ?? wrap.mode ?? 'compress';
-    const nativeMode = profile && !profiles.includes(profile) || profile === 'record-only'
+    const nativeMode = profile && !supportedProfile || profile === 'record-only'
         ? 'record'
         : configuredMode ? configuredMode === 'safe' || configuredMode === 'max' ? configuredMode : 'record'
             : proxyMode === 'record' ? 'record' : proxyMode === 'pixel' ? 'max' : 'safe';
-    const nativeProfile = profile && profiles.includes(profile) ? profile : nativeMode === 'record' ? 'record-only' : nativeMode === 'max' ? 'full-max' : 'full-safe';
+    const nativeProfile = supportedProfile ? profile : nativeMode === 'record' ? 'record-only' : nativeMode === 'max' ? 'full-max' : 'full-safe';
     const core = configuredCore && nativeMode !== 'record' && nativeProfile !== 'record-only';
     return { input, scripts, browse, mcp, memory, core, coreLeanBuild: core && nativeProfile === 'core-lean-build', nativeMode, nativeProfile };
 }
@@ -111,7 +113,7 @@ export function runtimeSettings(env = process.env) {
 export function moduleEnabled(kind, env = process.env) {
     return runtimeSettings(env)[kind];
 }
-function localOrigin(endpoint) {
+export function localOrigin(endpoint) {
     try {
         const url = new URL(endpoint);
         if (url.protocol !== 'http:' || url.username || url.password || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
@@ -162,7 +164,7 @@ async function directLocalFetch(input, init) {
 }
 /** Verify that the loopback listener matches the runtime's private run-state record. */
 export async function verifiedRuntime(endpoint, env = process.env, signal) {
-    return Boolean(await verifiedRuntimeInstance(endpoint, env.CAVEMAN_HOME ?? join(homedir(), '.caveman'), signal));
+    return Boolean(await verifiedRuntimeInstance(endpoint, cavemanHome(env), signal));
 }
 /** Reuse a recent health check only while the private run-state record is unchanged. */
 export async function verifiedRuntimeInstance(endpoint, home, signal, cached) {

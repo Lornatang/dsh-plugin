@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12 - 2026-11-25
+
+- Share path validation, Unicode checks, and bounded diagnostic formatting between the two report validators.
+
 ## 0.1.11
 
 - Match Cloudflare's reference coverage-ledger decision when checks in an archived attempt reuse the same artifact.

@@ -1,8 +1,6 @@
 /** Limit decoded response bytes before the MCP SDK buffers or parses them. */
 export const MAX_RESPONSE_BYTES = 16 * 1024 * 1024
-// Error bodies only need to reach the SDK intact, not the whole streaming limit.
-// Buffering an attacker-sized 16 MiB error page per failed call is pure waste;
-// cap the copy while keeping the same reject-on-overflow behavior.
+// Use a smaller limit for error bodies, which are buffered before parsing.
 const MAX_BUFFERED_ERROR_BYTES = 1024 * 1024
 
 type LimitExceeded = () => void

@@ -16,7 +16,6 @@ const runFile = promisify(execFile)
 const MAX_DISCOVERY_BYTES = 8 * 1024 * 1024
 const MAX_PAGES = 100
 const MAX_TOOLS = 1000
-// Report the real package version to the MCP server instead of a stale literal.
 const CLIENT_VERSION = (() => {
   try { return (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string }).version ?? '0.0.0' } catch { return '0.0.0' }
 })()
@@ -39,7 +38,8 @@ export interface BridgeOptions extends Config {
 }
 export type ConnectInput = { source: 'token'; token: string } | { source: 'gh' | 'oauth' }
 export type BridgeStatus = 'idle' | 'connecting' | 'authorizing' | 'ready' | 'error'
-export interface BridgeSnapshot { status: BridgeStatus; toolCount: number; source?: 'token' | 'gh' | 'env' | 'oauth'; error?: string; warning?: string; readOnly: boolean; oauthAvailable: boolean; requiredScopes?: string[]; scopes?: string[]; authorization?: { userCode: string; verificationUri: string } }
+type CredentialSource = 'token' | 'gh' | 'env' | 'oauth'
+export interface BridgeSnapshot { status: BridgeStatus; toolCount: number; source?: CredentialSource; error?: string; warning?: string; readOnly: boolean; oauthAvailable: boolean; requiredScopes?: string[]; scopes?: string[]; authorization?: { userCode: string; verificationUri: string } }
 type DiscoveredTool = { name: string; description?: string; inputSchema: unknown; outputSchema?: unknown; annotations?: { readOnlyHint?: boolean } }
 type OAuthSession = OAuthTokens & { clientId: string; persisted: boolean; pendingSave?: boolean }
 
@@ -72,12 +72,12 @@ export class GithubBridge {
   #client?: Client
   #tools = new Map<string, { dispose: () => void; approval: boolean }>()
   #status: BridgeStatus = 'idle'
-  #source?: 'token' | 'gh' | 'env' | 'oauth'
+  #source?: CredentialSource
   #error?: string
   #warning?: string
   #authorization?: { userCode: string; verificationUri: string }
   #requiredScopes?: string[]
-  #previousSource?: 'token' | 'gh' | 'env' | 'oauth'
+  #previousSource?: CredentialSource
   #previousStore?: StoredSession
   #oauth?: OAuthSession
   #refresh?: Promise<string>
@@ -217,10 +217,8 @@ export class GithubBridge {
     const pattern = this.#redactionPattern()
     return pattern ? message.replace(pattern, '[REDACTED]') : message
   }
-  // One cached alternation replaces every secret in a single pass. Rebuilding
-  // and sorting the secret list per string made large results O(secrets x bytes),
-  // and sequential replacement could corrupt an inserted [REDACTED] marker when
-  // a later secret matched text inside it.
+  // A single cached alternation avoids scanning each result once per secret or
+  // matching secrets inside an inserted [REDACTED] marker.
   #redactionPattern(): RegExp | null {
     if (this.#secretPattern !== undefined) return this.#secretPattern
     this.#pruneSecrets()
@@ -228,9 +226,7 @@ export class GithubBridge {
     this.#secretPattern = secrets.length ? new RegExp(secrets.map((secret) => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g') : null
     return this.#secretPattern
   }
-  // Rotation adds a new token per refresh, so an unbounded set would slowly
-  // grow the alternation and slow every redacted result. Insertion order tracks
-  // age, and the newest tokens are the ones a live client can still return.
+  // Keep only the most recent credentials as token rotation adds new entries.
   #pruneSecrets(): void {
     if (this.#secrets.size <= MAX_SECRETS) return
     for (const secret of this.#secrets) {
@@ -298,7 +294,7 @@ export class GithubBridge {
     } catch (error) { this.#fail(generation, error) }
   }
 
-  async #credential(source: 'token' | 'gh' | 'env' | 'oauth', token?: string): Promise<string> {
+  async #credential(source: CredentialSource, token?: string): Promise<string> {
     if (source === 'token' || source === 'oauth') return validateToken(token ?? '')
     if (source === 'env') return validateToken(process.env['GITHUB_TOKEN'] ?? '')
     try {
@@ -353,12 +349,8 @@ export class GithubBridge {
     catch (error) {
       if (this.#active(generation) && this.#oauth === session) {
         this.#fail(generation, error)
-        // Close the dead-token client, but only after the refresh error has
-        // reached the in-flight calls: closing the transport synchronously
-        // would reject them with "Connection closed" instead of the actionable
-        // reauthorization message. Error propagation is all microtasks, so a
-        // deferred macrotask runs after it; skip the close if the client was
-        // already replaced or shut down by then.
+        // Defer closing this client until in-flight calls receive the refresh
+        // error. Skip the close if another connection replaces it first.
         const dead = this.#client
         const shutdown = setTimeout(() => { if (this.#client === dead) void this.#shutdownClient() }, 0)
         shutdown.unref()
@@ -367,7 +359,12 @@ export class GithubBridge {
     } finally { if (this.#refresh === refresh) this.#refresh = undefined }
   }
 
-  async #establish(source: 'token' | 'gh' | 'env' | 'oauth', supplied: string | undefined, save: boolean, generation: number): Promise<void> {
+  #requireScopes(scopes: readonly string[]): string {
+    this.#requiredScopes = [...new Set([...(this.#requiredScopes ?? []), ...scopes])]
+    return `GitHub requires additional permissions (${this.#requiredScopes.join(', ')}). Connect again in GitHub settings, approve them, and retry the operation.`
+  }
+
+  async #establish(source: CredentialSource, supplied: string | undefined, save: boolean, generation: number): Promise<void> {
     const signal = this.#controller.signal
     this.#status = 'connecting'; this.#source = source; this.#error = undefined
     let token = await this.#credential(source, supplied)
@@ -395,8 +392,7 @@ export class GithubBridge {
           this.#warning = 'GitHub requested a permission this plugin does not recognize. Update the plugin before retrying.'
           return this.#warning
         }
-        this.#requiredScopes = [...new Set([...(this.#requiredScopes ?? []), ...scopes])]
-        return `GitHub requires additional permissions (${this.#requiredScopes.join(', ')}). Connect again in GitHub settings, approve them, and retry the operation.`
+        return this.#requireScopes(scopes)
       } : undefined,
       onEvent: () => {
         const now = Date.now()
@@ -452,7 +448,7 @@ export class GithubBridge {
     }
   }
 
-  async #discover(client: Client, signal: AbortSignal): Promise<DiscoveredTool[]> {
+  async #discover(client: Client, signal: AbortSignal): Promise<Map<string, DiscoveredTool>> {
     const budget = Math.min(Math.max(this.#options.toolCallTimeoutMs * 4, MIN_DISCOVERY_MS), MAX_DISCOVERY_MS)
     signal = AbortSignal.any([signal, AbortSignal.timeout(budget)])
     const tools: DiscoveredTool[] = []
@@ -469,24 +465,22 @@ export class GithubBridge {
       if (cursor && cursors.has(cursor)) throw new Error('MCP server repeated a continuation cursor')
       if (cursor) cursors.add(cursor)
     } while (cursor)
-    const names = new Set<string>()
+    const namedTools = new Map<string, DiscoveredTool>()
     for (const tool of tools) {
       const name = publicToolName(this.#options.serverName, tool.name)
-      if (names.has(name)) throw new Error('MCP server returned duplicate tool names')
-      names.add(name)
+      if (namedTools.has(name)) throw new Error('MCP server returned duplicate tool names')
+      namedTools.set(name, tool)
     }
-    return tools
+    return namedTools
   }
 
-  #register(client: Client, tools: DiscoveredTool[], connectionSignal: AbortSignal): void {
+  #register(client: Client, tools: Map<string, DiscoveredTool>, connectionSignal: AbortSignal): void {
     this.#clearTools()
+    const readOnly = this.#options.readOnly || this.#options.approvalHook === false
     try {
-      for (const tool of tools) {
-        // In read-only mode, or without an approval channel in the host, only
-        // tools the server marks read-only may register; anything else would
-        // bypass the requested restriction or the approval prompt.
-        if ((this.#options.readOnly || this.#options.approvalHook === false) && tool.annotations?.readOnlyHint !== true) continue
-        const name = publicToolName(this.#options.serverName, tool.name)
+      for (const [name, tool] of tools) {
+        const approval = tool.annotations?.readOnlyHint !== true
+        if (readOnly && approval) continue
         const definition = {
           name, description: tool.description ?? '', parameters: tool.inputSchema,
           output: {
@@ -511,8 +505,7 @@ export class GithubBridge {
               // GitHub reports workflow-write refusals as tool errors, not HTTP
               // scope challenges, so route them into the same reauthorization flow.
               if (!connectionSignal.aborted && this.#source === 'oauth' && /without `?workflow`? scope/.test(message)) {
-                this.#requiredScopes = [...new Set([...(this.#requiredScopes ?? []), 'workflow'])]
-                throw new Error(`GitHub requires additional permissions (${this.#requiredScopes.join(', ')}). Connect again in GitHub settings, approve them, and retry the operation.`)
+                throw new Error(this.#requireScopes(['workflow']))
               }
               // Preserve cancellation and MCP error identity unless redaction changes the text.
               if (message === original) throw error
@@ -522,7 +515,7 @@ export class GithubBridge {
             }
           },
         } as ToolDefinition
-        this.#tools.set(name, { dispose: this.#host.register(definition), approval: tool.annotations?.readOnlyHint !== true })
+        this.#tools.set(name, { dispose: this.#host.register(definition), approval })
       }
     } catch (error) { this.#clearTools(); throw error }
   }

@@ -1,10 +1,3 @@
-/**
- * The gate's HTTP surface: health, login, logout, and the authenticated proxy.
- *
- * Unauthenticated API calls get 401 JSON so the UI can react; every other path
- * is redirected to the login page. Authenticated requests are handed to the
- * proxy with an exchanged harness cookie.
- */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   COOKIE, clearCookie, sessionCookie, verifyPassword,
@@ -16,9 +9,7 @@ import {
 import { loginPage } from './page.ts'
 import type { LogSink } from './context.ts'
 
-/** Largest number of clients remembered for lockout accounting. */
 const MAX_TRACKED_CLIENTS = 1024
-/** Login checks that may run scrypt at the same time. */
 const CHECK_CONCURRENCY = 2
 
 /** Values the gate needs at request time. */
@@ -62,63 +53,37 @@ export function createHandler(options: GateOptions): (req: IncomingMessage, res:
   const failures = new Map<string, Failure>()
   const clientsInFlight = new Set<string>()
   const pendingForms = new Map<string, number>()
-  let checksInFlight = 0
-
-  /** Drop the stalest partial failure record to make room for a new client.
-   * Live lockouts and in-flight checks are never evicted. */
-  function evictPartial(now: number): boolean {
-    let victim: string | undefined
-    let oldest = Infinity
-    for (const [client, failure] of failures) {
-      if (failure.until > now || clientsInFlight.has(client)) continue
-      if (failure.expiresAt < oldest) {
-        oldest = failure.expiresAt
-        victim = client
-      }
-    }
-    if (victim === undefined) return false
-    failures.delete(victim)
-    return true
-  }
 
   function lockRemaining(ip: string): number {
     const now = Date.now()
-    let entry = failures.get(ip)
-    if (entry && entry.expiresAt <= now && !clientsInFlight.has(ip)) {
+    const entry = failures.get(ip)
+    if (entry) {
+      if (entry.expiresAt > now || clientsInFlight.has(ip)) return Math.max(0, entry.until - now)
       failures.delete(ip)
-      entry = undefined
     }
-    if (entry) return Math.max(0, entry.until - now)
     if (failures.size < MAX_TRACKED_CLIENTS) return 0
 
-    // Never evict a live lockout or an in-flight check. Partial failure
-    // counts may be evicted under pressure, so a store full of stale partial
-    // records cannot deny login to new clients; fail closed only when every
-    // slot holds a live lockout or in-flight check, keeping memory bounded.
+    // Prune expired records first, or evict the oldest partial count under pressure.
+    // Keep live lockouts and in-flight checks until they can safely expire.
     let earliest = Infinity
+    let oldestPartial = Infinity
+    let victim: string | undefined
     for (const [client, failure] of failures) {
-      if (failure.expiresAt <= now && !clientsInFlight.has(client)) failures.delete(client)
-      else earliest = Math.min(earliest, failure.expiresAt)
+      const inFlight = clientsInFlight.has(client)
+      if (failure.expiresAt <= now && !inFlight) {
+        failures.delete(client)
+        continue
+      }
+      earliest = Math.min(earliest, failure.expiresAt)
+      if (!inFlight && failure.until <= now && failure.expiresAt < oldestPartial) {
+        oldestPartial = failure.expiresAt
+        victim = client
+      }
     }
     if (failures.size < MAX_TRACKED_CLIENTS) return 0
-    if (evictPartial(now)) return 0
-    return Math.max(1000, earliest - now)
-  }
-
-  function recordFailure(ip: string): void {
-    let entry = failures.get(ip)
-    if (!entry) {
-      if (failures.size >= MAX_TRACKED_CLIENTS && !evictPartial(Date.now())) return
-      entry = { count: 0, until: 0, expiresAt: 0 }
-      failures.set(ip, entry)
-    }
-    const now = Date.now()
-    entry.count += 1
-    entry.expiresAt = now + lockMs
-    if (entry.count >= maxAttempts) {
-      entry.count = 0
-      entry.until = entry.expiresAt
-    }
+    if (victim === undefined) return Math.max(1000, earliest - now)
+    failures.delete(victim)
+    return 0
   }
 
   function sessionOf(req: IncomingMessage): boolean {
@@ -166,25 +131,29 @@ export function createHandler(options: GateOptions): (req: IncomingMessage, res:
       }
       const remaining = lockRemaining(ip)
       if (remaining > 0) return text(res, 429, 'too many attempts\n', { 'retry-after': String(Math.ceil(remaining / 1000)) })
-      if (clientsInFlight.has(ip) || checksInFlight >= CHECK_CONCURRENCY) {
+      if (clientsInFlight.has(ip) || clientsInFlight.size >= CHECK_CONCURRENCY) {
         return text(res, 429, 'busy, retry shortly\n', { 'retry-after': '1' })
       }
-      const reserved = !failures.has(ip)
-      if (reserved) failures.set(ip, { count: 0, until: 0, expiresAt: Date.now() + lockMs })
+      const previous = failures.get(ip)
+      const failure = previous ?? { count: 0, until: 0, expiresAt: Date.now() + lockMs }
+      if (!previous) failures.set(ip, failure)
       clientsInFlight.add(ip)
-      checksInFlight += 1
-      let ok = false
+      let ok: boolean
       try {
         ok = await verifyPassword(new URLSearchParams(form).get('password') || '', passwordHash)
       } catch (err) {
-        if (reserved) failures.delete(ip)
+        if (!previous) failures.delete(ip)
         throw err
       } finally {
-        checksInFlight -= 1
         clientsInFlight.delete(ip)
       }
       if (!ok) {
-        recordFailure(ip)
+        failure.count += 1
+        failure.expiresAt = Date.now() + lockMs
+        if (failure.count >= maxAttempts) {
+          failure.count = 0
+          failure.until = failure.expiresAt
+        }
         log.info('login failed from ' + ip)
         return html(res, 401, loginPage(title, next, 'Wrong password.'))
       }
@@ -207,7 +176,6 @@ export function createHandler(options: GateOptions): (req: IncomingMessage, res:
     return html(res, 200, loginPage(title, next, ''))
   }
 
-  /** Route one request; never throws for expected paths. */
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const raw = req.url || '/'
     if (!raw.startsWith('/')) return text(res, 400, 'bad request\n')
@@ -236,9 +204,10 @@ export function createHandler(options: GateOptions): (req: IncomingMessage, res:
     }
     if (path.startsWith('/__gate/')) return text(res, 404, 'not found\n')
 
+    const isApi = path === '/api' || path.startsWith('/api/')
     const token = cookieValue(req.headers.cookie, COOKIE)
     const unauthorized = (): void => {
-      if (path === '/api' || path.startsWith('/api/')) {
+      if (isApi) {
         return json(res, 401, { error: 'unauthorized', login: '/__gate/login' })
       }
       return redirect(res, '/__gate/login?next=' + encodeURIComponent(raw))
@@ -247,7 +216,7 @@ export function createHandler(options: GateOptions): (req: IncomingMessage, res:
 
     if (!sameOrigin(req, publicOrigin, useTls)) {
       log.warn('cross-origin request blocked: ' + String(req.method) + ' ' + path)
-      if (path === '/api' || path.startsWith('/api/')) return json(res, 403, { error: 'forbidden' })
+      if (isApi) return json(res, 403, { error: 'forbidden' })
       return text(res, 403, 'forbidden\n')
     }
 

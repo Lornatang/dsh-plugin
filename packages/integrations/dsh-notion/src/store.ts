@@ -13,6 +13,8 @@ export interface StoredSession {
   codeVerifier?: string
 }
 
+const alwaysActive = (): boolean => true
+
 /** Keep credentials separate for each DSH profile and server. */
 export function sessionFileFor(serverName: string, url: string, patchPath?: string): string {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(serverName)) {
@@ -137,34 +139,15 @@ export class SessionStore {
   }
 
   async patch(patch: Partial<StoredSession>, active?: () => boolean): Promise<void> {
-    await this.#serialize(async () => {
-      if (active && !active()) throw new Error('notion: connection cancelled')
-      const next = { ...this.#value, ...patch, version: 1 as const }
-      await this.#flush(next)
-      this.#value = next
-    })
+    await this.#update(active ?? alwaysActive, { patch })
   }
 
   async saveTokens(tokens: OAuthTokens, active: () => boolean, expected?: OAuthTokens): Promise<void> {
-    await this.#serialize(async () => {
-      if (!active()) throw new Error('notion: connection cancelled')
-      // A concurrent refresh may already have rotated the credentials.
-      if (expected && this.#value.tokens !== expected) return
-      const next = { ...this.#value, tokens, version: 1 as const }
-      await this.#flush(next)
-      this.#value = next
-    })
+    await this.#update(active, { patch: { tokens }, expected })
   }
 
   async clearCredentialsIf(active: () => boolean, expected: OAuthTokens | undefined, ...fields: readonly (keyof StoredSession)[]): Promise<void> {
-    await this.#serialize(async () => {
-      if (!active()) throw new Error('notion: connection cancelled')
-      if (expected && this.#value.tokens !== expected) return
-      const next: StoredSession = { ...this.#value, version: 1 }
-      for (const field of fields) if (field !== 'version') delete next[field]
-      await this.#flush(next)
-      this.#value = next
-    })
+    await this.#update(active, { fields, expected })
   }
 
   async clear(...fields: readonly (keyof StoredSession)[]): Promise<void> {
@@ -172,10 +155,21 @@ export class SessionStore {
   }
 
   async clearIf(active: (() => boolean) | undefined, ...fields: readonly (keyof StoredSession)[]): Promise<void> {
-    await this.#serialize(async () => {
-      if (active && !active()) throw new Error('notion: connection cancelled')
-      const next: StoredSession = { ...this.#value, version: 1 }
-      for (const field of fields) if (field !== 'version') delete next[field]
+    await this.#update(active ?? alwaysActive, { fields })
+  }
+
+  #update(active: () => boolean, change: {
+    patch?: Partial<StoredSession>
+    fields?: readonly (keyof StoredSession)[]
+    expected?: OAuthTokens
+  }): Promise<void> {
+    return this.#serialize(async () => {
+      if (!active()) throw new Error('notion: connection cancelled')
+      const { patch, fields, expected } = change
+      // A concurrent refresh may already have rotated the credentials.
+      if (expected && this.#value.tokens !== expected) return
+      const next: StoredSession = { ...this.#value, ...patch, version: 1 }
+      for (const field of fields ?? []) if (field !== 'version') delete next[field]
       await this.#flush(next)
       this.#value = next
     })

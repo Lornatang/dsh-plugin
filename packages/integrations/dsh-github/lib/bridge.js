@@ -11,7 +11,6 @@ const runFile = promisify(execFile);
 const MAX_DISCOVERY_BYTES = 8 * 1024 * 1024;
 const MAX_PAGES = 100;
 const MAX_TOOLS = 1000;
-// Report the real package version to the MCP server instead of a stale literal.
 const CLIENT_VERSION = (() => {
     try {
         return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0';
@@ -242,10 +241,8 @@ export class GithubBridge {
         const pattern = this.#redactionPattern();
         return pattern ? message.replace(pattern, '[REDACTED]') : message;
     }
-    // One cached alternation replaces every secret in a single pass. Rebuilding
-    // and sorting the secret list per string made large results O(secrets x bytes),
-    // and sequential replacement could corrupt an inserted [REDACTED] marker when
-    // a later secret matched text inside it.
+    // A single cached alternation avoids scanning each result once per secret or
+    // matching secrets inside an inserted [REDACTED] marker.
     #redactionPattern() {
         if (this.#secretPattern !== undefined)
             return this.#secretPattern;
@@ -254,9 +251,7 @@ export class GithubBridge {
         this.#secretPattern = secrets.length ? new RegExp(secrets.map((secret) => secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g') : null;
         return this.#secretPattern;
     }
-    // Rotation adds a new token per refresh, so an unbounded set would slowly
-    // grow the alternation and slow every redacted result. Insertion order tracks
-    // age, and the newest tokens are the ones a live client can still return.
+    // Keep only the most recent credentials as token rotation adds new entries.
     #pruneSecrets() {
         if (this.#secrets.size <= MAX_SECRETS)
             return;
@@ -403,12 +398,8 @@ export class GithubBridge {
         catch (error) {
             if (this.#active(generation) && this.#oauth === session) {
                 this.#fail(generation, error);
-                // Close the dead-token client, but only after the refresh error has
-                // reached the in-flight calls: closing the transport synchronously
-                // would reject them with "Connection closed" instead of the actionable
-                // reauthorization message. Error propagation is all microtasks, so a
-                // deferred macrotask runs after it; skip the close if the client was
-                // already replaced or shut down by then.
+                // Defer closing this client until in-flight calls receive the refresh
+                // error. Skip the close if another connection replaces it first.
                 const dead = this.#client;
                 const shutdown = setTimeout(() => { if (this.#client === dead)
                     void this.#shutdownClient(); }, 0);
@@ -420,6 +411,10 @@ export class GithubBridge {
             if (this.#refresh === refresh)
                 this.#refresh = undefined;
         }
+    }
+    #requireScopes(scopes) {
+        this.#requiredScopes = [...new Set([...(this.#requiredScopes ?? []), ...scopes])];
+        return `GitHub requires additional permissions (${this.#requiredScopes.join(', ')}). Connect again in GitHub settings, approve them, and retry the operation.`;
     }
     async #establish(source, supplied, save, generation) {
         const signal = this.#controller.signal;
@@ -457,8 +452,7 @@ export class GithubBridge {
                     this.#warning = 'GitHub requested a permission this plugin does not recognize. Update the plugin before retrying.';
                     return this.#warning;
                 }
-                this.#requiredScopes = [...new Set([...(this.#requiredScopes ?? []), ...scopes])];
-                return `GitHub requires additional permissions (${this.#requiredScopes.join(', ')}). Connect again in GitHub settings, approve them, and retry the operation.`;
+                return this.#requireScopes(scopes);
             } : undefined,
             onEvent: () => {
                 const now = Date.now();
@@ -554,25 +548,23 @@ export class GithubBridge {
             if (cursor)
                 cursors.add(cursor);
         } while (cursor);
-        const names = new Set();
+        const namedTools = new Map();
         for (const tool of tools) {
             const name = publicToolName(this.#options.serverName, tool.name);
-            if (names.has(name))
+            if (namedTools.has(name))
                 throw new Error('MCP server returned duplicate tool names');
-            names.add(name);
+            namedTools.set(name, tool);
         }
-        return tools;
+        return namedTools;
     }
     #register(client, tools, connectionSignal) {
         this.#clearTools();
+        const readOnly = this.#options.readOnly || this.#options.approvalHook === false;
         try {
-            for (const tool of tools) {
-                // In read-only mode, or without an approval channel in the host, only
-                // tools the server marks read-only may register; anything else would
-                // bypass the requested restriction or the approval prompt.
-                if ((this.#options.readOnly || this.#options.approvalHook === false) && tool.annotations?.readOnlyHint !== true)
+            for (const [name, tool] of tools) {
+                const approval = tool.annotations?.readOnlyHint !== true;
+                if (readOnly && approval)
                     continue;
-                const name = publicToolName(this.#options.serverName, tool.name);
                 const definition = {
                     name, description: tool.description ?? '', parameters: tool.inputSchema,
                     output: {
@@ -602,8 +594,7 @@ export class GithubBridge {
                             // GitHub reports workflow-write refusals as tool errors, not HTTP
                             // scope challenges, so route them into the same reauthorization flow.
                             if (!connectionSignal.aborted && this.#source === 'oauth' && /without `?workflow`? scope/.test(message)) {
-                                this.#requiredScopes = [...new Set([...(this.#requiredScopes ?? []), 'workflow'])];
-                                throw new Error(`GitHub requires additional permissions (${this.#requiredScopes.join(', ')}). Connect again in GitHub settings, approve them, and retry the operation.`);
+                                throw new Error(this.#requireScopes(['workflow']));
                             }
                             // Preserve cancellation and MCP error identity unless redaction changes the text.
                             if (message === original)
@@ -615,7 +606,7 @@ export class GithubBridge {
                         }
                     },
                 };
-                this.#tools.set(name, { dispose: this.#host.register(definition), approval: tool.annotations?.readOnlyHint !== true });
+                this.#tools.set(name, { dispose: this.#host.register(definition), approval });
             }
         }
         catch (error) {

@@ -1,10 +1,3 @@
-/**
- * The gate's HTTP surface: health, login, logout, and the authenticated proxy.
- *
- * Unauthenticated API calls get 401 JSON so the UI can react; every other path
- * is redirected to the login page. Authenticated requests are handed to the
- * proxy with an exchanged harness cookie.
- */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { LogSink } from './context.ts';
 /** Values the gate needs at request time. */

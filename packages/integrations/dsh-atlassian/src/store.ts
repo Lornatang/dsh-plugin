@@ -20,6 +20,8 @@ export interface StoredSession {
 export interface ServerCredential { username?: string; secret: string }
 export interface ServerCredentials { jira?: ServerCredential; confluence?: ServerCredential }
 
+const REDIRECT_CREDENTIALS = ['clientInformation', 'tokens', 'codeVerifier'] as const
+
 /** Compare the bearer and refresh credentials, not object identity across reloads. */
 export function sameTokens(left: OAuthTokens | undefined, right: OAuthTokens | undefined): boolean {
   return left === right || !!left && !!right && left.access_token === right.access_token && left.refresh_token === right.refresh_token
@@ -169,9 +171,7 @@ export class SessionStore {
     await this.#withLease(async () => {
       if (active && !active()) throw new Error('atlassian: connection cancelled')
       if ((expected || guard) && !sameTokens(this.#value.tokens, expected)) throw new Error('atlassian: credentials changed; reconnect to continue')
-      const next = { ...this.#value, ...patch, version: 1 as const }
-      await this.#flush(next)
-      this.#value = next
+      await this.#commit({ ...this.#value, ...patch, version: 1 })
     }, lease, signal)
   }
 
@@ -179,15 +179,11 @@ export class SessionStore {
   async prepareRedirect(actual: string, signal?: AbortSignal): Promise<void> {
     await this.#withLease(async () => {
       const previous = this.#value.redirectUri
-      if (previous && previous !== actual && this.#value.tokens) return
-      const next: StoredSession = { ...this.#value, redirectUri: actual, version: 1 }
-      if (previous && previous !== actual) {
-        delete next.clientInformation
-        delete next.tokens
-        delete next.codeVerifier
-      }
-      await this.#flush(next)
-      this.#value = next
+      const changed = !!previous && previous !== actual
+      if (changed && this.#value.tokens) return
+      const next = this.#withoutFields(changed ? REDIRECT_CREDENTIALS : [])
+      next.redirectUri = actual
+      await this.#commit(next)
     }, undefined, signal)
   }
 
@@ -196,12 +192,9 @@ export class SessionStore {
     await this.#withLease(async () => {
       if (!active()) throw new Error('atlassian: connection cancelled')
       if (this.#value.tokens && !sameTokens(this.#value.tokens, expected)) return
-      const next: StoredSession = { ...this.#value, redirectUri: actual, version: 1 }
-      delete next.clientInformation
-      delete next.tokens
-      delete next.codeVerifier
-      await this.#flush(next)
-      this.#value = next
+      const next = this.#withoutFields(REDIRECT_CREDENTIALS)
+      next.redirectUri = actual
+      await this.#commit(next)
     }, lease, signal)
   }
 
@@ -209,9 +202,7 @@ export class SessionStore {
     await this.#withLease(async () => {
       if (!active()) throw new Error('atlassian: connection cancelled')
       if ((expected || guard) && !sameTokens(this.#value.tokens, expected) && !sameTokens(this.#value.tokens, tokens)) return
-      const next = { ...this.#value, tokens, version: 1 as const }
-      await this.#flush(next)
-      this.#value = next
+      await this.#commit({ ...this.#value, tokens, version: 1 })
     }, lease, signal)
   }
 
@@ -225,22 +216,14 @@ export class SessionStore {
     await this.#withLease(async () => {
       if (!active()) throw new Error('atlassian: connection cancelled')
       if ((expected || guard) && !sameTokens(this.#value.tokens, expected)) return
-      const next: StoredSession = { ...this.#value, version: 1 }
-      for (const field of fields) if (field !== 'version') delete next[field]
-      await this.#flush(next)
-      this.#value = next
+      await this.#commit(this.#withoutFields(fields))
       cleared = true
     }, lease, signal)
     return cleared
   }
 
   async clear(...fields: readonly (keyof StoredSession)[]): Promise<void> {
-    await this.#withLease(async () => {
-      const next: StoredSession = { ...this.#value, version: 1 }
-      for (const field of fields) if (field !== 'version') delete next[field]
-      await this.#flush(next)
-      this.#value = next
-    })
+    await this.#withLease(() => this.#commit(this.#withoutFields(fields)))
   }
 
   async destroy(): Promise<void> {
@@ -251,7 +234,13 @@ export class SessionStore {
     })
   }
 
-  async #flush(value: StoredSession): Promise<void> {
+  #withoutFields(fields: readonly (keyof StoredSession)[]): StoredSession {
+    const next: StoredSession = { ...this.#value, version: 1 }
+    for (const field of fields) if (field !== 'version') delete next[field]
+    return next
+  }
+
+  async #commit(value: StoredSession): Promise<void> {
     await mkdir(dirname(this.#file), { recursive: true, mode: 0o700 })
     await (await secureExistingFile(this.#file))?.close()
     const temporary = `${this.#file}.${randomBytes(12).toString('hex')}.tmp`
@@ -262,5 +251,6 @@ export class SessionStore {
     } finally {
       await rm(temporary, { force: true })
     }
+    this.#value = value
   }
 }

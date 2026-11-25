@@ -4,11 +4,6 @@ import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv
 type Schema = Parameters<AjvJsonSchemaValidator['getValidator']>[0]
 type Validator = ReturnType<AjvJsonSchemaValidator['getValidator']>
 
-// Compiled validators are cached per stable host-assigned schema id so repeated
-// tool calls do not recompile or re-clone the schema. Every cache miss uses a
-// FRESH AjvJsonSchemaValidator: the SDK caches compiled schemas by $id on the
-// instance, so one shared instance could let a server-supplied $id shadow
-// another tool's schema.
 const MAX_CACHED = 32
 const cache = new Map<number, Validator>()
 let overflow = false
@@ -20,6 +15,7 @@ function validatorFor(schema: Schema, schemaId: number | undefined): Validator {
     if (hit) { cached = true; return hit }
   }
   cached = false
+  // A fresh SDK validator keeps duplicate server-supplied $id values isolated.
   const validate = new AjvJsonSchemaValidator().getValidator(schema)
   if (schemaId !== undefined) {
     // Never evict: the host omits a schema only when it believes this worker

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.20 - 2026-11-25
+
+- Reuse credential writes, Jira search fallback state, and REST connection cleanup.
+
 ## 0.1.19 - 2026-11-23
 
 - Remove unreachable connection settings branches and an unused icon from the Jira client.

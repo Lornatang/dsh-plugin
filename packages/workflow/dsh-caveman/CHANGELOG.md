@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.13 - 2026-11-25
+
+- Reuse loopback configuration, preset checks, and skill and session helpers across the Caveman integration.
+
 ## 0.1.12 - 2026-11-25
 
 - Sync the upstream Caveman source, CLI and tested runtime binaries to 4.2.0 while retaining DSH session analysis.

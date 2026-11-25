@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG } from './config.js'
 import type { Config } from './config.js'
 import { PACKAGE_NAME, PLUGIN_NAME, PRODUCER, SKILL_NAMES, VERSION } from './constants.js'
 import {
-  buildCoverage, buildFindingsDocument, fingerprintFor, normalizeAnchor, normalizeRuleId, normalizeFinding,
+  buildCoverage, buildFindingsDocument, findingStatusOf, fingerprintFor, normalizeAnchor, normalizeRuleId, normalizeFinding,
   policyGate, renderReport, severityCounts, sortedFindings, toCsv, toSarif, validateDraft, validateFindingEvidence,
 } from './contracts.js'
 import { gitString, revisionFilePrefix } from './git.js'
@@ -18,7 +18,7 @@ import { ScanStore, defaultStateDir } from './store.js'
 import { readEvidenceLine, readEvidenceLines, resolveTarget } from './target.js'
 import type { ResolvedTarget } from './target.js'
 import { assertArtifactContract } from './schema.js'
-import { canonicalProspectivePath, ensureDir, isWithin, joinWithin, newId, normalizeLine, nowIso, readFullText, readJson, readText, renameFileAtomic, sanitizeRelative, sha256, truncate, writeFileAtomic, writeJsonAtomic } from './util.js'
+import { canonicalProspectivePath, isWithin, joinWithin, newId, normalizeLine, nowIso, readFullText, readJson, readText, renameFileAtomic, sanitizeRelative, sha256, truncate, writeFileAtomic, writeJsonAtomic } from './util.js'
 import { createExportValidator, writeSecureExport } from './secure-export.js'
 import { acquireStateLock } from './state-lock.js'
 import { WorkerRegistry } from './deep-worker.js'
@@ -128,6 +128,13 @@ function validateThreatModel(value: unknown): void {
   if (object['format'] === 'markdown' && (typeof object['content'] !== 'string' || object['content'].trim().length === 0)) {
     throw new Error('codex-security: threatModel markdown content must be a non-empty string')
   }
+}
+
+function findingsWithTriage(findings: Finding[], triage: Record<string, TriageEntry>) {
+  return findings.map((finding) => {
+    const entry = triage[finding.findingId]
+    return { ...finding, status: findingStatusOf(entry), ...(entry ? { triage: entry } : {}) }
+  })
 }
 
 export interface SecurityServiceOptions {
@@ -517,15 +524,13 @@ export class SecurityService {
       ? await this.collectBoundEvidenceLines(options.workerSnapshot, draft.findings)
       : await this.collectEvidenceLines(record, draft.findings)
     const findings = draft.findings.map((input) => normalizeFinding(scanId, input, { rootPath: record.target.rootPath, targetId: record.target.targetId, evidenceLines: evidence }))
-    const deduped: Finding[] = []
     const seen = new Set<string>()
     for (const finding of findings) {
       if (seen.has(finding.fingerprints.primary)) throw new Error('codex-security: duplicate finding identity; use identity.instance to distinguish findings')
       seen.add(finding.fingerprints.primary)
-      deduped.push(finding)
     }
-    validateFindingEvidence(deduped)
-    assertArtifactContract('findings', buildFindingsDocument(scanId, deduped))
+    validateFindingEvidence(findings)
+    assertArtifactContract('findings', buildFindingsDocument(scanId, findings))
     const stored: StoredDraft = {
       ...(record.target.kind === 'git_diff' && !record.target.workingTree ? { boundRevisionEvidence: true } : {}),
       ...(draft.reviewState.surfaces.some((surface) => surface.sourceEvidence !== undefined) ? { coverageReferences: true } : {}),
@@ -533,9 +538,8 @@ export class SecurityService {
       recordedAt: nowIso(),
       complete: draft.complete === true,
       input: { ...draft, scanId },
-      findings: sortedFindings(deduped),
+      findings: sortedFindings(findings),
     }
-    await ensureDir(join(dir, 'checkpoints'))
     await writeJsonAtomic(join(dir, 'checkpoints', 'scan-draft.json'), stored)
     const threatModel = draft.threatModel ?? record.threatModel
     if (threatModel !== undefined) await writeFileAtomic(join(dir, 'threatmodel.md'), renderThreatModel(threatModel))
@@ -1182,9 +1186,7 @@ export class SecurityService {
   async getScan(args: Json): Promise<Json> {
     const scanId = requiredStr(args, 'scanId')
     const { record, dir } = await this.requireScan(scanId)
-    // Read the scan files that all belong to this one response from the resolved
-    // directory instead of re-resolving the index (and re-reading scan.json)
-    // through the store once per document.
+    // Reuse the resolved directory to avoid rereading the scan index and record.
     const triage = (await readJson<Record<string, TriageEntry>>(join(dir, 'triage.json'))) ?? {}
     const [document, coverage, manifest] = record.status === 'completed'
       ? await Promise.all([
@@ -1193,10 +1195,9 @@ export class SecurityService {
         readJson<Json>(join(dir, 'scan-manifest.json')),
       ])
       : []
-    const findings = (document?.findings ?? []).map((finding) => {
-      const entry = triage[finding.findingId]
-      return { ...finding, status: entry?.status ?? 'open', ...(entry ? { triage: entry } : {}) }
-    })
+    const findings = findingsWithTriage(document?.findings ?? [], triage)
+    const sealedScan = asObject(manifest?.['scan'])
+    const sealedArtifacts = sealedScan?.['artifacts']
     const artifacts = await this.store.listArtifacts(scanId, dir)
     const reviewItems = (await readJson<ReviewItemsDocument>(join(dir, 'review-items.json')))?.items ?? []
     return {
@@ -1204,7 +1205,11 @@ export class SecurityService {
       scan: record,
       findings,
       coverage: coverage ?? null,
-      manifest: manifest ? { sealedAt: (asObject(manifest['scan']) ?? {})['sealedAt'] ?? null, artifactCount: Array.isArray((manifest['scan'] as Json | undefined)?.['artifacts']) ? ((manifest['scan'] as Json)['artifacts'] as unknown[]).length : 0, status: (asObject(manifest['scan']) ?? {})['status'] ?? null } : null,
+      manifest: manifest ? {
+        sealedAt: sealedScan?.['sealedAt'] ?? null,
+        artifactCount: Array.isArray(sealedArtifacts) ? sealedArtifacts.length : 0,
+        status: sealedScan?.['status'] ?? null,
+      } : null,
       artifacts,
       triage,
       reviewItems: { total: reviewItems.length, byStatus: this.countBy(reviewItems.map((item) => item.status)) },
@@ -1242,11 +1247,7 @@ export class SecurityService {
       readJson<{ findings?: Finding[] }>(join(dir, 'findings.json')),
       readJson<Record<string, TriageEntry>>(join(dir, 'triage.json')),
     ])
-    const triage = savedTriage ?? {}
-    return (document?.findings ?? []).map((finding) => {
-      const entry = triage[finding.findingId]
-      return { ...finding, status: entry?.status ?? 'open', ...(entry ? { triage: entry } : {}) }
-    })
+    return findingsWithTriage(document?.findings ?? [], savedTriage ?? {})
   }
 
   async listFindings(args: Json): Promise<Json> {

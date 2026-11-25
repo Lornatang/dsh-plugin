@@ -1,18 +1,13 @@
 import { readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { EMPTY_SEVERITY_COUNTS } from './types.js';
 import { ensureDir, joinWithin, nowIso, readJson, readText, sanitizeRelative, writeFileAtomic, writeJsonAtomic, sha256 } from './util.js';
 import { acquireStateLock } from './state-lock.js';
 /** Files owned by the seal step; agents cannot overwrite them through save_artifact. */
 const FINAL_ARTIFACTS = new Set(['findings.json', 'coverage.json', 'scan-manifest.json', 'sarif.json', 'report.md', 'threat-model.md']);
 const SEALED_FILES = new Set([...FINAL_ARTIFACTS, 'scan.json', 'threatmodel.md']);
 const INTERNAL_FILES = new Set([...SEALED_FILES, 'candidates.json', 'validations.json', 'attack-paths.json', 'review-items.json', 'triage.json']);
-/**
- * Fold an artifact path into the form Win32 uses when resolving it. Windows
- * filesystems are case-insensitive and silently drop trailing dots and spaces,
- * so 'SCAN.JSON', 'Scan.json.' and 'checkpoints\scan-draft.json' all address
- * the same file as their lowercase spelling. Compare guard names in this folded
- * form while keeping the original spelling on disk.
- */
+/** Compare artifact names using Win32 case folding and trailing dot/space rules. */
 function guardName(relativePath) {
     return relativePath
         .split('/')
@@ -29,10 +24,6 @@ export function defaultStateDir(patchPath, configured) {
 }
 export function repoKeyFor(rootPath) {
     return sha256(rootPath).slice(0, 16);
-}
-function emptySeverityCounts() {
-    const counts = { critical: 0, high: 0, medium: 0, low: 0, informational: 0 };
-    return counts;
 }
 export function summarize(record) {
     return {
@@ -88,7 +79,6 @@ export class ScanStore {
         this.queue = next.catch(() => undefined);
         return next;
     }
-    /** Cheap identity of index.json so a changed on-disk index invalidates the cache. */
     async indexFileStamp() {
         const info = await stat(this.indexPath).catch(() => undefined);
         return info ? info.mtimeMs + ':' + info.size + ':' + info.ino : undefined;
@@ -120,7 +110,7 @@ export class ScanStore {
                     continue;
                 const record = await readJson(join(scansDir, scanId, 'scan.json'));
                 if (record?.scanId === scanId && record.repoKey === repoKey)
-                    index.scans[scanId] = { ...summarize(record), repoKey };
+                    index.scans[scanId] = summarize(record);
             }
         }
         return index;
@@ -157,7 +147,7 @@ export class ScanStore {
                 ...(input.previousScanId ? { previousScanId: input.previousScanId } : {}),
                 artifacts: [],
                 findingsCount: 0,
-                severityCounts: emptySeverityCounts(),
+                severityCounts: { ...EMPTY_SEVERITY_COUNTS },
                 warnings: input.warnings,
             };
             options.signal?.throwIfAborted();
@@ -166,7 +156,7 @@ export class ScanStore {
             await ensureDir(join(dir, 'checkpoints'));
             await ensureDir(join(dir, 'artifacts'));
             const index = await this.loadIndex();
-            index.scans[record.scanId] = { ...summarize(record), repoKey: record.repoKey };
+            index.scans[record.scanId] = summarize(record);
             await this.saveIndex(index);
             return record;
         }, options.signal);
@@ -197,20 +187,22 @@ export class ScanStore {
         for (const repoKey of repos) {
             const dir = join(reposDir, repoKey, 'scans', scanId);
             const record = await readJson(join(dir, 'scan.json'));
-            if (record) {
+            if (record)
                 return { record, dir };
-            }
         }
         return undefined;
+    }
+    async requireScan(scanId) {
+        const found = await this.get(scanId);
+        if (!found)
+            throw new Error('codex-security: scan not found: ' + scanId);
+        return found;
     }
     async update(scanId, mutate, options = {}) {
         let published;
         try {
             return await this.serialize(async () => {
-                const found = await this.get(scanId);
-                if (!found)
-                    throw new Error('codex-security: scan not found: ' + scanId);
-                const record = found.record;
+                const { record } = await this.requireScan(scanId);
                 mutate(record);
                 record.updatedAt = nowIso();
                 record.progress.updatedAt = record.updatedAt;
@@ -239,21 +231,17 @@ export class ScanStore {
         }
     }
     async writeScanFile(scanId, name, value) {
-        const found = await this.get(scanId);
-        if (!found)
-            throw new Error('codex-security: scan not found: ' + scanId);
-        const target = joinWithin(found.dir, name);
+        const { dir } = await this.requireScan(scanId);
+        const target = joinWithin(dir, name);
         await writeJsonAtomic(target, value);
         return target;
     }
     async readScanFile(scanId, name) {
-        const found = await this.get(scanId);
-        if (!found)
-            throw new Error('codex-security: scan not found: ' + scanId);
+        const { dir, record } = await this.requireScan(scanId);
         const clean = sanitizeRelative(name);
-        if (found.record.status !== 'completed' && FINAL_ARTIFACTS.has(guardName(clean)))
+        if (record.status !== 'completed' && FINAL_ARTIFACTS.has(guardName(clean)))
             return undefined;
-        return readJson(joinWithin(found.dir, clean));
+        return readJson(joinWithin(dir, clean));
     }
     async list() {
         let index = await this.readIndex();
@@ -277,32 +265,27 @@ export class ScanStore {
         return Object.values(index.scans).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     }
     async saveArtifact(scanId, relativePath, content, mediaType) {
-        const found = await this.get(scanId);
-        if (!found)
-            throw new Error('codex-security: scan not found: ' + scanId);
-        if (found.record.status !== 'running')
-            throw new Error('codex-security: cannot change artifacts after scan is ' + found.record.status);
+        const { dir, record } = await this.requireScan(scanId);
+        if (record.status !== 'running')
+            throw new Error('codex-security: cannot change artifacts after scan is ' + record.status);
         const clean = sanitizeRelative(relativePath);
         const guarded = guardName(clean);
         if (INTERNAL_FILES.has(guarded) || guarded === 'checkpoints' || guarded.startsWith('checkpoints/'))
             throw new Error('codex-security: cannot overwrite internal scan path: ' + clean);
-        const target = joinWithin(found.dir, clean);
+        const target = joinWithin(dir, clean);
         const data = Buffer.from(content, 'utf8');
-        await ensureDir(dirname(target));
         await writeFileAtomic(target, data);
         const digest = sha256(data);
         return { path: clean, bytes: data.byteLength, sha256: digest, mediaType };
     }
     async readArtifact(scanId, relativePath, limit) {
-        const found = await this.get(scanId);
-        if (!found)
-            throw new Error('codex-security: scan not found: ' + scanId);
+        const { dir, record } = await this.requireScan(scanId);
         const clean = sanitizeRelative(relativePath);
         const guarded = guardName(clean);
-        if (guarded.startsWith('checkpoints/seal-') || (found.record.status !== 'completed' && FINAL_ARTIFACTS.has(guarded))) {
+        if (guarded.startsWith('checkpoints/seal-') || (record.status !== 'completed' && FINAL_ARTIFACTS.has(guarded))) {
             throw new Error('codex-security: artifact not found: ' + relativePath);
         }
-        const target = joinWithin(found.dir, clean);
+        const target = joinWithin(dir, clean);
         const content = await readText(target, limit);
         if (content === undefined)
             throw new Error('codex-security: artifact not found: ' + relativePath);
@@ -353,12 +336,11 @@ export class ScanStore {
     }
     async setTriage(scanId, entry) {
         return this.serialize(async () => {
-            const found = await this.get(scanId);
-            if (!found)
-                throw new Error('codex-security: scan not found: ' + scanId);
-            const triage = (await readJson(join(found.dir, 'triage.json'))) ?? {};
+            const { dir } = await this.requireScan(scanId);
+            const path = join(dir, 'triage.json');
+            const triage = (await readJson(path)) ?? {};
             triage[entry.findingId] = entry;
-            await writeJsonAtomic(join(found.dir, 'triage.json'), triage);
+            await writeJsonAtomic(path, triage);
             return entry;
         });
     }

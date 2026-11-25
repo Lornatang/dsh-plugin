@@ -1,11 +1,15 @@
 import { ROUTE_PREFIX } from './constants.js';
-function sendJson(res, status, payload) {
-    const body = JSON.stringify(payload);
+function sendResponse(res, status, body, mediaType, filename) {
     res.statusCode = status;
-    res.setHeader('content-type', 'application/json; charset=utf-8');
+    res.setHeader('content-type', mediaType + '; charset=utf-8');
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
+    if (filename !== undefined)
+        res.setHeader('content-disposition', 'attachment; filename="' + filename + '"');
     res.end(body);
+}
+function sendJson(res, status, payload) {
+    sendResponse(res, status, JSON.stringify(payload), 'application/json');
 }
 async function readBody(req) {
     const chunks = [];
@@ -30,14 +34,6 @@ function queryOf(url) {
     for (const [key, value] of url.searchParams.entries())
         query[key] = value;
     return query;
-}
-function sendFile(res, content, mediaType, filename) {
-    res.statusCode = 200;
-    res.setHeader('content-type', mediaType + '; charset=utf-8');
-    res.setHeader('cache-control', 'no-store');
-    res.setHeader('x-content-type-options', 'nosniff');
-    res.setHeader('content-disposition', 'attachment; filename="' + filename + '"');
-    res.end(content);
 }
 /** Mutating HTTP routes must be same-origin JSON requests, never cross-site form posts. */
 function requireJsonMutation(req) {
@@ -126,7 +122,7 @@ export async function handleRequest(service, req, res) {
             const scanId = exportMatch[1];
             const format = typeof query['format'] === 'string' ? query['format'] : 'markdown';
             const exported = await service.exportContent(scanId, format);
-            sendFile(res, exported.content, exported.mediaType, exported.filename);
+            sendResponse(res, 200, exported.content, exported.mediaType, exported.filename);
             return;
         }
         if (route === '/' && method === 'GET') {

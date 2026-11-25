@@ -1,6 +1,6 @@
 {
   "name": "@lornatang/dsh-caveman",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Caveman integration for DeepSeek Harness.",
   "type": "module",
   "license": "Apache-2.0",

@@ -71,7 +71,6 @@ export class JiraBoard {
         const epoch = this.#epoch();
         if (this.#resource?.epoch === epoch)
             return this.#resource;
-        // The bridge may already have resolved the site while connecting.
         const shared = this.#bridge.resource?.();
         if (shared?.epoch === epoch)
             return this.#resource = shared;
@@ -98,8 +97,8 @@ export class JiraBoard {
     async load(query) {
         const { id, base, site, epoch } = await this.#getResource();
         const fallback = 'updated >= -180d ORDER BY updated DESC';
-        let jql = query.jql?.trim() || fallback;
-        let retried = false;
+        const requestedJql = query.jql?.trim() || fallback;
+        let jql = requestedJql;
         let result;
         for (;;) {
             try {
@@ -107,17 +106,14 @@ export class JiraBoard {
                 break;
             }
             catch (error) {
-                if (!retried && jql !== fallback && /unbounded|unrestricted|add a search restriction/i.test(String(error))) {
-                    retried = true;
-                    jql = fallback;
-                    continue;
-                }
-                throw error;
+                if (jql === fallback || !/unbounded|unrestricted|add a search restriction/i.test(String(error)))
+                    throw error;
+                jql = fallback;
             }
         }
         const rows = Array.isArray(result['issues']) ? result['issues'] : [];
         const issues = rows.map((value) => issue(value, base)).filter((value) => !!value);
-        return { issues, constrained: retried, jql, site, cloudId: id, truncated: result['isLast'] === false, limit: query.limit };
+        return { issues, constrained: jql !== requestedJql, jql, site, cloudId: id, truncated: result['isLast'] === false, limit: query.limit };
     }
     async detail(key, timeoutMs) {
         const { id, base, epoch } = await this.#getResource();

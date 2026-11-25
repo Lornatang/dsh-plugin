@@ -5,8 +5,8 @@
  * Usage: node validate-coverage-ledger.cjs <path-to-coverage-ledger.json>
  */
 
-const path = require("node:path");
 const { SafeInputError, readFileWithinLimit: readBoundedInput } = require("./bounded-input.cjs");
+const { createValidationHelpers } = require("./validation-helpers.cjs");
 
 // Conservative bounds apply before JSON.parse and again to the parsed document.
 const LIMITS = Object.freeze({
@@ -80,60 +80,22 @@ const PRIOR_STATUSES = new Set([
 const FINGERPRINT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const WINDOWS_RESERVED_AGENT_ID = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
-const VISIBLE_CONTENT = /[^\p{White_Space}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
-const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
-const WINDOWS_RESERVED_COMPONENT = /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/iu;
-const UNSAFE_DIAGNOSTIC_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu;
-const MAX_DIAGNOSTIC_STRING_LENGTH = 256;
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 
+const {
+  PATH_FORBIDDEN_CHARACTER,
+  WINDOWS_RESERVED_COMPONENT,
+  UNSAFE_DIAGNOSTIC_CHARACTER,
+  VISIBLE_CONTENT,
+  createErrorList,
+  escapeUnsafeDiagnosticCharacters,
+  hasVisibleProse,
+  isSafeRelativePath,
+  safeQuote,
+} = createValidationHelpers(LIMITS.validationErrors);
+
 class JsonStructureError extends Error {}
-
-function escapeUnsafeDiagnosticCharacters(value) {
-  return String(value).replace(UNSAFE_DIAGNOSTIC_CHARACTER, (character) => {
-    const codePoint = character.codePointAt(0);
-    return codePoint <= 0xffff
-      ? `\\u${codePoint.toString(16).padStart(4, "0")}`
-      : `\\u{${codePoint.toString(16)}}`;
-  });
-}
-
-function safeQuote(value) {
-  let serialized;
-  if (typeof value === "string") {
-    const clipped = value.length > MAX_DIAGNOSTIC_STRING_LENGTH
-      ? `${value.slice(0, MAX_DIAGNOSTIC_STRING_LENGTH)}...`
-      : value;
-    serialized = JSON.stringify(clipped);
-  } else if (value === null || typeof value === "boolean") {
-    serialized = String(value);
-  } else if (typeof value === "number" && Number.isFinite(value)) {
-    serialized = String(value);
-  } else {
-    serialized = `"<${Array.isArray(value) ? "array" : typeof value}>"`;
-  }
-  return escapeUnsafeDiagnosticCharacters(serialized);
-}
-
-function createErrorList() {
-  const errors = [];
-  Object.defineProperty(errors, "truncated", { value: false, writable: true, enumerable: false });
-  Object.defineProperty(errors, "push", {
-    value(...messages) {
-      const remaining = LIMITS.validationErrors - this.length;
-      if (remaining > 0) {
-        Array.prototype.push.apply(this, messages.slice(0, remaining).map(escapeUnsafeDiagnosticCharacters));
-      }
-      if (messages.length > remaining) this.truncated = true;
-      // Reaching the cap also means the visible list is saturated: callers stop
-      // producing errors once the budget is exhausted.
-      if (this.length >= LIMITS.validationErrors) this.truncated = true;
-      return this.length;
-    },
-  });
-  return errors;
-}
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -327,25 +289,6 @@ function preflightDocument(root) {
   return errors;
 }
 
-function hasValidUnicodeScalarValues(value) {
-  let index = 0;
-  while (index < value.length) {
-    const first = value.charCodeAt(index++);
-    if (first >= 0xd800 && first <= 0xdbff) {
-      if (index >= value.length) return false;
-      const second = value.charCodeAt(index++);
-      if (second < 0xdc00 || second > 0xdfff) return false;
-    } else if (first >= 0xdc00 && first <= 0xdfff) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function hasVisibleProse(value) {
-  return hasValidUnicodeScalarValues(value) && VISIBLE_CONTENT.test(value);
-}
-
 function isVisibleText(value, maxLength = MAX_TEXT_LENGTH) {
   return typeof value === "string" &&
     value.length > 0 &&
@@ -381,17 +324,6 @@ function canonicalCoverageId(refs) {
     throw new TypeError("canonical_refs has missing or unexpected fields");
   }
   return fields.map((field) => encodeCanonicalRef(refs[field])).join("::");
-}
-
-function isSafeRelativePath(value) {
-  if (typeof value !== "string" || value.length === 0 || !hasValidUnicodeScalarValues(value) || value.trim() !== value || PATH_FORBIDDEN_CHARACTER.test(value) || value.includes("\\") || value.includes(":")) return false;
-  if (path.posix.isAbsolute(value) || path.win32.isAbsolute(value) || /^[A-Za-z]:/.test(value) || value.startsWith("~")) return false;
-  return value.split("/").every((segment) =>
-    segment !== "" &&
-    segment !== "." &&
-    segment !== ".." &&
-    !/[ .]$/u.test(segment) &&
-    !WINDOWS_RESERVED_COMPONENT.test(segment));
 }
 
 function isSafeAgentId(value) {

@@ -51,7 +51,7 @@ export class ServerBridge {
     #operations = new Map();
     #disposers = [];
     #controllers = new Set();
-    #http = new Set();
+    #http = [];
     #status = 'idle';
     #error;
     #disposed = false;
@@ -184,10 +184,8 @@ export class ServerBridge {
                 client.close();
             throw error;
         }
-        // The replacement connection is live; release the previous pooled sockets.
-        for (const client of this.#http)
-            client.close();
-        this.#http = new Set(clients);
+        this.#closeHttp();
+        this.#http = clients;
     }
     async disconnect() {
         this.#generation++;
@@ -230,12 +228,12 @@ export class ServerBridge {
         this.#operations = new Map();
     }
     #closeHttp() { for (const client of this.#http)
-        client.close(); this.#http.clear(); }
+        client.close(); this.#http = []; }
     #definition(rawName, op) {
         const definition = {
             name: publicToolName(this.#name, rawName),
             description: op.description,
-            parameters: { type: 'object', properties: op.properties, required: op.required ?? [], additionalProperties: false },
+            parameters: { type: 'object', properties: op.properties, required: op.required, additionalProperties: false },
             output: {
                 schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
                 render: (_args, result) => result.content,
@@ -297,7 +295,8 @@ export class ServerBridge {
                 const version = a['currentVersion'];
                 if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1)
                     throw new Error('currentVersion must be a positive integer');
-                return this.#request(confluence, 'PUT', `/rest/api/content/${key(a, 'pageId', /^\d+$/)}`, {}, { id: key(a, 'pageId', /^\d+$/), type: 'page', title: text(a, 'title'), version: { number: version + 1 }, body: { storage: { value: text(a, 'bodyStorage'), representation: 'storage' } } }, s, t);
+                const id = key(a, 'pageId', /^\d+$/);
+                return this.#request(confluence, 'PUT', `/rest/api/content/${id}`, {}, { id, type: 'page', title: text(a, 'title'), version: { number: version + 1 }, body: { storage: { value: text(a, 'bodyStorage'), representation: 'storage' } } }, s, t);
             });
         }
         return ops;

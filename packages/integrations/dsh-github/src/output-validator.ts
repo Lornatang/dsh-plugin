@@ -1,8 +1,7 @@
 import { Worker } from 'node:worker_threads'
 import type { jsonSchemaValidator, JsonSchemaType, JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/types'
 
-// The SDK validator API is synchronous. Defer its schema validation to our
-// worker pool, which is invoked for every tool page before a result reaches DSH.
+// The SDK validator API is synchronous, so validate structured results in workers.
 export const deferredOutputValidation: jsonSchemaValidator = {
   getValidator<T>(_schema: JsonSchemaType): JsonSchemaValidator<T> {
     return (data: unknown) => ({ valid: true, data: data as T, errorMessage: undefined })
@@ -11,14 +10,12 @@ export const deferredOutputValidation: jsonSchemaValidator = {
 
 const MAX_WORKERS = 4
 const MAX_WAITERS = 32
-// A validator stuck in pathological schema work (for example catastrophic regex
-// backtracking) may ignore terminate() for a long time. Never let cleanup hold a
-// validation slot, and cap abandoned workers so they cannot accumulate unbounded.
+// Bound cleanup waits and abandoned workers in case validation stalls terminate().
 const TERMINATE_GRACE_MS = 1000
 const MAX_ABANDONED = 8
 
 let slots = 0
-type Waiter = { signal: AbortSignal; resolve: () => void; reject: (error: Error) => void; abort: () => void }
+type Waiter = { signal: AbortSignal; resolve: () => void; abort: () => void }
 const waiting: Waiter[] = []
 
 async function acquire(signal: AbortSignal): Promise<void> {
@@ -26,7 +23,7 @@ async function acquire(signal: AbortSignal): Promise<void> {
   if (slots < MAX_WORKERS) { slots++; return }
   if (waiting.length >= MAX_WAITERS) throw new Error('github: too many pending output validations')
   await new Promise<void>((resolve, reject) => {
-    const waiter: Waiter = { signal, resolve, reject, abort: () => {
+    const waiter: Waiter = { signal, resolve, abort: () => {
       const index = waiting.indexOf(waiter)
       if (index !== -1) waiting.splice(index, 1)
       reject(new Error('github: output validation timed out or was cancelled'))
@@ -44,9 +41,7 @@ function release(): void {
   next.resolve()
 }
 
-// Schema objects are stable for the lifetime of a discovered tool. A numeric id
-// lets warm workers reuse a compiled validator without re-sending (and having
-// V8 re-clone) the schema on every call.
+// Stable schema IDs let warm workers reuse compiled validators without cloning schemas.
 const schemaIds = new WeakMap<object, number>()
 let nextSchemaId = 1
 function schemaIdOf(schema: unknown): number | undefined {
@@ -60,7 +55,6 @@ function schemaIdOf(schema: unknown): number | undefined {
 
 interface PooledWorker { worker: Worker; retire: boolean; schemas: Set<number> }
 const idle: PooledWorker[] = []
-let spawned = 0
 let nextTaskId = 1
 const abandoned = new Set<Worker>()
 
@@ -71,25 +65,20 @@ function spawnWorker(): PooledWorker {
   })
   // Idle or stuck workers must never keep the host process alive.
   worker.unref()
-  // A resource-limit kill (for example an OOM driven by an attacker-supplied
-  // schema) fires 'error' even after the task listeners are removed. Keep a
-  // permanent no-op listener so an abandoned worker can never crash the host.
+  // Resource-limit errors can arrive after task listeners are removed.
   worker.on('error', () => {})
-  spawned += 1
   return { worker, retire: false, schemas: new Set() }
 }
 
 async function retireWorker(entry: PooledWorker): Promise<void> {
-  spawned -= 1
   const { worker } = entry
   abandoned.add(worker)
-  const termination = worker.terminate().then(() => { abandoned.delete(worker) }, () => { abandoned.delete(worker) })
+  const forget = (): void => { abandoned.delete(worker) }
+  const termination = worker.terminate().then(forget, forget)
   let grace: NodeJS.Timeout | undefined
   const expired = new Promise<void>((resolve) => { grace = setTimeout(resolve, TERMINATE_GRACE_MS); grace.unref() })
   await Promise.race([termination, expired])
   if (grace) clearTimeout(grace)
-  // A worker that outlived the grace period stays unref'd and resource-limited;
-  // it is removed from the abandoned set whenever terminate() finally settles.
 }
 
 class InvalidOutput extends Error {}
@@ -122,7 +111,6 @@ function runTask(entry: PooledWorker, schema: unknown, schemaId: number | undefi
     worker.on('exit', onExit)
     if (signal.aborted) { onAbort(); return }
     signal.addEventListener('abort', onAbort, { once: true })
-    // Send the schema only when this worker has not compiled it yet.
     const missing = schemaId === undefined || !entry.schemas.has(schemaId)
     try { worker.postMessage(missing ? { id, schemaId, schema, value } : { id, schemaId, value }) } catch (error) {
       cleanup()
@@ -159,8 +147,7 @@ export async function validateOutput(schema: unknown, value: unknown, timeoutMs:
   } finally {
     const keep = entry !== undefined && healthy && !entry.retire
     if (entry && keep) idle.push(entry)
-    // Release the slot before any retirement wait: cleanup must never hold a
-    // validation slot while a stuck worker ignores terminate().
+    // Release the slot before waiting for worker termination.
     release()
     if (entry && !keep) await retireWorker(entry)
   }

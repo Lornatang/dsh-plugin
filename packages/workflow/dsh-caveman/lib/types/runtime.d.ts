@@ -1,8 +1,9 @@
 type Binary = 'blocks' | 'browse' | 'mcp' | 'memory';
 type Module = 'scripts' | 'browse' | 'input';
+export declare const NATIVE_PROFILES: ReadonlySet<string>;
+export declare function cavemanHome(env?: NodeJS.ProcessEnv): string;
 /** Find a configured binary, PATH command, or the CLI's installation. */
 export declare function findCavemanBinary(kind: Binary, configured?: string, env?: NodeJS.ProcessEnv): string | undefined;
-/** Read the module switches and native coding policy in one configuration snapshot. */
 export declare function runtimeSettings(env?: NodeJS.ProcessEnv): {
     input: boolean;
     scripts: boolean;
@@ -16,6 +17,7 @@ export declare function runtimeSettings(env?: NodeJS.ProcessEnv): {
 };
 /** Modules default to on; a saved explicit off is respected. */
 export declare function moduleEnabled(kind: Module, env?: NodeJS.ProcessEnv): boolean;
+export declare function localOrigin(endpoint: string): URL | undefined;
 /** Verify that the loopback listener matches the runtime's private run-state record. */
 export declare function verifiedRuntime(endpoint: string, env?: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<boolean>;
 export interface VerifiedRuntimeInstance {

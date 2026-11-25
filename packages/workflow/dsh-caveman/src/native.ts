@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open, realpath, stat } from 'node:fs/promises'
 import { connect } from 'node:net'
-import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { isDeepStrictEqual } from 'node:util'
@@ -14,7 +13,7 @@ import type { ResolvedToolSet, ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-fs'
 import { cavemanSessionId } from './attribution.js'
-import { verifiedRuntimeInstance, type VerifiedRuntimeInstance } from './runtime.js'
+import { cavemanHome, NATIVE_PROFILES, verifiedRuntimeInstance, type VerifiedRuntimeInstance } from './runtime.js'
 import { isManagedTool } from './compression.js'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -25,8 +24,11 @@ declare module '@deepseek-ai/dsh-llm' {
 
 type PolicyMode = 'record' | 'safe' | 'max'
 interface NativeResponse { protocol_version: 1; action: string; visibility: string; fail_open: true; context?: string }
-const profiles = new Set(['record-only', 'core', 'core-lean-build', 'ledger', 'ccr-masking', 'cache-aware', 'full-safe', 'full-max'])
 const stopwords = new Set(['about', 'after', 'again', 'agent', 'before', 'build', 'change', 'code', 'could', 'create', 'does', 'from', 'have', 'help', 'implement', 'into', 'make', 'please', 'project', 'repository', 'should', 'spec', 'task', 'that', 'their', 'then', 'there', 'these', 'they', 'this', 'through', 'user', 'want', 'what', 'when', 'where', 'which', 'with', 'would', 'your'])
+
+export function isCavecrewPreset(preset: string | undefined): boolean {
+  return preset === 'cavecrew-investigator' || preset === 'cavecrew-builder' || preset === 'cavecrew-reviewer'
+}
 
 /** Confirm that the model's assembled tool surface includes the admitted MCP recovery tool. */
 export function recoveryIsPublished(assembly: Pick<PromptAssembly, 'tools' | 'sections'>, tool: ToolDefinition): boolean {
@@ -63,7 +65,6 @@ export function nativePrompt(prompt: string): { prompt: { bytes: number; sha256:
   return { prompt: { bytes: bytes.length, sha256: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }, task_profile: { type, terms: [...seen], continuation } }
 }
 
-/** Return the supported local socket endpoint, if available on this platform. */
 export function nativeSocketPath(home: string, platform: NodeJS.Platform = process.platform): string | undefined {
   // The current Windows runtime has no pipe peer proof, and its HTTP health
   // check only verifies the HTTP listener. Keep native events local to DSH.
@@ -76,7 +77,7 @@ function validResponse(value: unknown): value is NativeResponse {
   if (response.protocol_version !== 1 || response.fail_open !== true || !['allow', 'observe', 'block', 'ask', 'defer'].includes(String(response.action)) ||
     !['silent', 'advisory', 'user'].includes(String(response.visibility))) return false
   if (response.policy_mode !== undefined && !['record', 'safe', 'max'].includes(String(response.policy_mode))) return false
-  if (response.profile !== undefined && !profiles.has(String(response.profile))) return false
+  if (response.profile !== undefined && !NATIVE_PROFILES.has(String(response.profile))) return false
   for (const [key, maximum] of [['context', 65536], ['message', 4096], ['output_replacement', 2097152], ['recovery_ref', 1024], ['decision_id', 256]] as const) {
     const field = response[key]
     if (field !== undefined && (typeof field !== 'string' || Buffer.byteLength(field, 'utf8') > maximum)) return false
@@ -196,9 +197,12 @@ async function runtimeInstance(endpoint: string, home: string, signal?: AbortSig
 
 /** Add dynamic native task context when the verified local runtime is running. */
 export function registerNative(ctx: Context, endpoint: string, policy: { mode: PolicyMode; profile: string; core: boolean }): void {
-  const home = process.env.CAVEMAN_HOME ?? join(homedir(), '.caveman')
+  const home = cavemanHome()
   if (!nativeSocketPath(home)) return
   interface SessionState { instance: string; session: { caveman_session_id: string; host_session_id: string; cwd: string; parent_session_id?: string }; specialized: boolean; confirmed: boolean; queue?: Promise<void>; contexts: string[] }
+  const envelope = (session: SessionState['session']) => ({
+    protocol_version: 1, policy_mode: policy.mode, profile: policy.profile, agent: { id: 'dsh', surface: 'dsh' }, session,
+  })
   const sessions = new WeakMap<Agent, SessionState>()
   const owners = new WeakMap<Session, Agent>()
   const selections = new WeakMap<Agent, ResolvedToolSet>()
@@ -212,7 +216,7 @@ export function registerNative(ctx: Context, endpoint: string, policy: { mode: P
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const preset = ctx.get('agentPresets')?.composedPreset(agent.ctx)
-    const specialized = preset === 'cavecrew-investigator' || preset === 'cavecrew-builder' || preset === 'cavecrew-reviewer'
+    const specialized = isCavecrewPreset(preset)
     const existing = sessions.get(agent)
     if (existing?.queue) await existing.queue
     const toolSet = selections.get(agent)
@@ -248,8 +252,7 @@ export function registerNative(ctx: Context, endpoint: string, policy: { mode: P
     const parent = agent.session.header.origin === 'subagent' && agent.session.header.parentSession
       ? cavemanSessionId(String(agent.session.header.parentSession)) : undefined
     const session = { caveman_session_id: id, host_session_id: id, cwd, ...(parent ? { parent_session_id: parent } : {}) }
-    const base = { protocol_version: 1, policy_mode: policy.mode, profile: policy.profile, agent: { id: 'dsh', surface: 'dsh' }, session,
-      model: { provider: modelSelection.provider, model: modelSelection.model } }
+    const base = { ...envelope(session), model: { provider: modelSelection.provider, model: modelSelection.model } }
     const current = sessions.get(agent)
     if (!current || current.instance !== instance) {
       const started = await nativeCall(home, { ...base, event: { type: 'session.start', timestamp_ms: Date.now() } }, signal)
@@ -276,8 +279,7 @@ export function registerNative(ctx: Context, endpoint: string, policy: { mode: P
     if (!agent || !state) return
     const task = (state.queue ?? Promise.resolve()).then(async () => {
       if (sessions.get(agent) !== state || await runtimeInstance(endpoint, home) !== state.instance) return
-      const response = await nativeCall(home, { protocol_version: 1, policy_mode: policy.mode, profile: policy.profile,
-        agent: { id: 'dsh', surface: 'dsh' }, session: state.session,
+      const response = await nativeCall(home, { ...envelope(state.session),
         event: { type: kind === 'compaction/start' ? 'context.compact.before' : 'context.compact.after', timestamp_ms: Date.now() } })
       if (response) state.confirmed = true
       if (kind === 'compaction/end' && response?.context) state.contexts.push(response.context)
@@ -291,7 +293,7 @@ export function registerNative(ctx: Context, endpoint: string, policy: { mode: P
     const state = sessions.get(exec.agent)
     if (!state?.confirmed) return next()
     if (await runtimeInstance(endpoint, home, exec.signal) !== state.instance) { sessions.delete(exec.agent); return next() }
-    const base = { protocol_version: 1, policy_mode: policy.mode, profile: policy.profile, agent: { id: 'dsh', surface: 'dsh' }, session: state.session }
+    const base = envelope(state.session)
     const beforeState = exec.name === 'read' ? await inputState(ctx, state.session.cwd, exec.arguments, exec.signal) : undefined
     const before = await nativeCall(home, { ...base, event: { type: 'tool.before', timestamp_ms: Date.now() },
       tool: { name: exec.name, input: exec.arguments, ...(beforeState ? { input_state: beforeState } : {}) } }, exec.signal)
@@ -321,8 +323,7 @@ export function registerNative(ctx: Context, endpoint: string, policy: { mode: P
     sessions.delete(agent)
     const task = (state.queue ?? Promise.resolve()).then(async () => {
       if (await runtimeInstance(endpoint, home) !== state.instance) return
-      const base = { protocol_version: 1, policy_mode: policy.mode, profile: policy.profile,
-        agent: { id: 'dsh', surface: 'dsh' }, session: state.session }
+      const base = envelope(state.session)
       if (state.session.parent_session_id && !await nativeCall(home, { ...base, event: { type: 'subagent.stop', timestamp_ms: Date.now() } })) return
       await nativeCall(home, { ...base, event: { type: 'session.end', timestamp_ms: Date.now() } })
     })

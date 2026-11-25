@@ -1,9 +1,3 @@
-/**
- * Request parsing and response helpers shared by the login page and the proxy.
- *
- * Everything here is deliberately small: bounded body reads, one origin check,
- * one redirect sanitizer and one set of gate headers.
- */
 import { STATUS_CODES } from 'node:http'
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
 import { isIP } from 'node:net'
@@ -117,8 +111,8 @@ export function sameOrigin(req: IncomingMessage, publicOrigin: string, useTls: b
 
 /** Only same-site absolute paths; rejects //evil and backslash tricks. */
 export function safeNext(value: unknown): string {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return '/'
-  if (value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return '/'
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') ||
+      value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return '/'
   return value
 }
 
@@ -182,36 +176,31 @@ export function readForm(req: IncomingMessage): Promise<string> {
     let size = 0
     let settled = false
     const chunks: Buffer[] = []
-    const finish = (fn: (value: string) => void, value: string): void => {
+    const complete = (error?: Error): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      fn(value)
-    }
-    const fail = (error: Error): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      reject(error)
+      if (error) reject(error)
+      else resolve(Buffer.concat(chunks).toString('utf8'))
     }
     const timer = setTimeout(() => {
-      fail(new Error('timeout'))
+      complete(new Error('timeout'))
       req.resume()
     }, FORM_TIMEOUT)
     req.on('data', (chunk: Buffer) => {
       if (settled) return
       size += chunk.length
       if (size > MAX_FORM) {
-        fail(new Error('too large'))
+        complete(new Error('too large'))
         req.resume()
         return
       }
       chunks.push(chunk)
     })
-    req.on('end', () => finish(resolve, Buffer.concat(chunks).toString('utf8')))
-    req.on('error', (err: Error) => fail(err))
+    req.on('end', () => complete())
+    req.on('error', complete)
     req.on('close', () => {
-      if (!req.complete) fail(new Error('aborted'))
+      if (!req.complete) complete(new Error('aborted'))
     })
   })
 }

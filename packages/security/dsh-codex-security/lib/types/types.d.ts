@@ -8,6 +8,7 @@ export type TargetKind = 'git_revision' | 'git_worktree' | 'git_diff' | 'directo
 export type Disposition = 'reported' | 'no_issue_found' | 'rejected' | 'not_applicable' | 'needs_follow_up';
 export type FindingStatus = 'open' | 'triaged' | 'fixed' | 'false_positive' | 'accepted_risk' | 'wont_fix';
 export declare const SEVERITIES: Severity[];
+export declare const EMPTY_SEVERITY_COUNTS: Readonly<Record<Severity, number>>;
 export declare const SEVERITY_SCORE: Record<Severity, number>;
 export declare const FINDING_STATUSES: FindingStatus[];
 export declare const DISPOSITIONS: Disposition[];

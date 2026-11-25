@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.18] - 2026-11-25
+
+- Share finding and triage formatting, response headers, and scan-index handling.
+
 ## [0.1.17] - 2026-11-25
 
 - Add verified threat-model inspection to the host tools and Web workbench.

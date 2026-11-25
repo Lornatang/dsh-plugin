@@ -17,6 +17,7 @@ interface NativeResponse {
     fail_open: true;
     context?: string;
 }
+export declare function isCavecrewPreset(preset: string | undefined): boolean;
 /** Confirm that the model's assembled tool surface includes the admitted MCP recovery tool. */
 export declare function recoveryIsPublished(assembly: Pick<PromptAssembly, 'tools' | 'sections'>, tool: ToolDefinition): boolean;
 /** Hash and classify the prompt locally; the runtime does not receive the prompt text. */
@@ -31,7 +32,6 @@ export declare function nativePrompt(prompt: string): {
         continuation: boolean;
     };
 };
-/** Return the supported local socket endpoint, if available on this platform. */
 export declare function nativeSocketPath(home: string, platform?: NodeJS.Platform): string | undefined;
 export declare function nativeCall(home: string, request: object, signal?: AbortSignal): Promise<NativeResponse | undefined>;
 /** Add dynamic native task context when the verified local runtime is running. */

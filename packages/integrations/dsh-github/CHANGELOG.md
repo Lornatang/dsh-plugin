@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.13 - 2026-11-25
+
+- Share OAuth scope handling and route responses, reuse discovered tool names, and remove unused validation state.
+
 ## 0.1.12
 
 - Use host authentication for connector routes. Requires DeepSeek Harness 0.2.3-alpha.2 or newer.

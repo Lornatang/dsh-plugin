@@ -10,7 +10,7 @@ type Schema = Record<string, unknown>
 interface Operation {
   description: string
   properties: Record<string, Schema>
-  required?: string[]
+  required: string[]
   execute: (args: Args, signal?: AbortSignal, timeoutMs?: number) => Promise<unknown>
 }
 const string = { type: 'string' }
@@ -62,7 +62,7 @@ export class ServerBridge {
   #operations = new Map<string, Operation>()
   #disposers: Array<() => void> = []
   #controllers = new Set<AbortController>()
-  #http = new Set<ServerHttp>()
+  #http: ServerHttp[] = []
   #status: BridgeSnapshot['status'] = 'idle'
   #error: string | undefined
   #disposed = false
@@ -174,9 +174,8 @@ export class ServerBridge {
       for (const client of clients) client.close()
       throw error
     }
-    // The replacement connection is live; release the previous pooled sockets.
-    for (const client of this.#http) client.close()
-    this.#http = new Set(clients)
+    this.#closeHttp()
+    this.#http = clients
   }
 
   async disconnect(): Promise<BridgeSnapshot> {
@@ -218,13 +217,13 @@ export class ServerBridge {
     this.#operations = new Map()
   }
 
-  #closeHttp(): void { for (const client of this.#http) client.close(); this.#http.clear() }
+  #closeHttp(): void { for (const client of this.#http) client.close(); this.#http = [] }
 
   #definition(rawName: string, op: Operation): ToolDefinition {
     const definition = {
       name: publicToolName(this.#name, rawName),
       description: op.description,
-      parameters: { type: 'object', properties: op.properties, required: op.required ?? [], additionalProperties: false },
+      parameters: { type: 'object', properties: op.properties, required: op.required, additionalProperties: false },
       output: {
         schema: { type: 'object', properties: { content: { type: 'array', items: {} } }, required: ['content'], additionalProperties: false },
         render: (_args: unknown, result: unknown) => (result as { content: Array<{ type: 'text'; text: string }> }).content,
@@ -279,7 +278,8 @@ export class ServerBridge {
       add('updateConfluencePage', 'Replace a Confluence page using its current version and storage-format XHTML.', { pageId: string, title: string, bodyStorage: string, currentVersion: integer }, ['pageId', 'title', 'bodyStorage', 'currentVersion'], (a, s, t) => {
         const version = a['currentVersion']
         if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) throw new Error('currentVersion must be a positive integer')
-        return this.#request(confluence, 'PUT', `/rest/api/content/${key(a, 'pageId', /^\d+$/)}`, {}, { id: key(a, 'pageId', /^\d+$/), type: 'page', title: text(a, 'title'), version: { number: version + 1 }, body: { storage: { value: text(a, 'bodyStorage'), representation: 'storage' } } }, s, t)
+        const id = key(a, 'pageId', /^\d+$/)
+        return this.#request(confluence, 'PUT', `/rest/api/content/${id}`, {}, { id, type: 'page', title: text(a, 'title'), version: { number: version + 1 }, body: { storage: { value: text(a, 'bodyStorage'), representation: 'storage' } } }, s, t)
       })
     }
     return ops

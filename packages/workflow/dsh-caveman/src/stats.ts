@@ -89,33 +89,31 @@ interface StatsOptions { all: boolean; share: boolean; since?: { label: string; 
 
 function parseOptions(flags: string): StatsOptions {
   const result: StatsOptions = { all: false, share: false }
-  const args = flags.trim() ? flags.trim().split(/\s+/u) : []
+  const args = flags.match(/\S+/gu) ?? []
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]
     if (arg === '--all') result.all = true
     else if (arg === '--share') result.share = true
     else if (arg === '--since') {
-      const label = args[++index]
-      const match = label ? /^(\d+)([dh])$/u.exec(label) : null
-      if (!match) throw new Error('--since takes Nh or Nd (for example, 24h or 7d)')
-      const quantity = Number(match[1])
-      if (!Number.isSafeInteger(quantity) || quantity < 0) throw new Error('--since takes Nh or Nd (for example, 24h or 7d)')
+      const match = /^(\d+)([dh])$/u.exec(args[++index] ?? '')
+      const quantity = Number(match?.[1])
+      if (!match || !Number.isSafeInteger(quantity)) throw new Error('--since takes Nh or Nd (for example, 24h or 7d)')
       const milliseconds = quantity * (match[2] === 'd' ? 86_400_000 : 3_600_000)
       if (!Number.isSafeInteger(milliseconds)) throw new Error('--since duration is too large')
-      result.since = { label: label!, milliseconds }
+      result.since = { label: match[0], milliseconds }
     } else throw new Error(`Unknown statistics option: ${arg}`)
   }
   return result
 }
 
+function formatSessionStats(events: readonly SessionEvent[], options: StatsOptions): string {
+  const counts = countsFor(events)
+  return options.share ? sharedReport(counts) : ['DSH session usage (recorded assistant messages only)', ...linesFor(counts)].join('\n')
+}
+
 /** Report recorded message usage without claiming savings or unreported counts. */
 export function sessionStats(events: readonly SessionEvent[], flags: string): string {
-  const options = parseOptions(flags)
-  const counts = countsFor(events)
-  if (options.share) {
-    return sharedReport(counts)
-  }
-  return ['DSH session usage (recorded assistant messages only)', ...linesFor(counts)].join('\n')
+  return formatSessionStats(events, parseOptions(flags))
 }
 
 /** Aggregate each live or stored session once, excluding fork-inherited events. */
@@ -123,7 +121,7 @@ export async function statsReport(ctx: Context, current: Session, flags: string,
   signal.throwIfAborted()
   let options: StatsOptions
   try { options = parseOptions(flags) } catch (error) { return (error as Error).message }
-  if (!options.all && !options.since) return sessionStats(current.snapshotEvents(current.inheritedEventCount), flags)
+  if (!options.all && !options.since) return formatSessionStats(current.snapshotEvents(current.inheritedEventCount), options)
   const totals = countsFor([])
   const live = ctx.get('sessions')?.list() ?? [current]
   const known = new Set(live.map(session => String(session.id)))

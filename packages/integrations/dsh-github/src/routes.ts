@@ -41,10 +41,10 @@ async function readInput(req: IncomingMessage): Promise<ConnectInput> {
   let parsed: unknown
   try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new Error('Invalid JSON') }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid connection request')
-  const value = parsed as Record<string, unknown>
-  if (value['source'] === 'gh' && Object.keys(value).length === 1) return { source: 'gh' }
-  if (value['source'] === 'oauth' && Object.keys(value).length === 1) return { source: 'oauth' }
-  if (value['source'] === 'token' && typeof value['token'] === 'string' && Object.keys(value).every((key) => key === 'source' || key === 'token')) return { source: 'token', token: value['token'] }
+  const { source, token } = parsed as Record<string, unknown>
+  const keys = Object.keys(parsed)
+  if ((source === 'gh' || source === 'oauth') && keys.length === 1) return { source }
+  if (source === 'token' && typeof token === 'string' && keys.every((key) => key === 'source' || key === 'token')) return { source, token }
   throw new Error('Invalid connection request')
 }
 
@@ -53,15 +53,16 @@ export function registerRoutes(web: RouteRegistrar, bridge: PluginBridge): () =>
     if (!peer || peer.signal.aborted) { res.writeHead(401).end(); return }
     const path = new URL(req.url ?? '/', 'http://localhost').pathname
     try {
-      if (req.method === 'GET' && path === `${ROUTE_PREFIX}/status`) { respond(res, 200, { ...bridge.snapshot(), ok: true }); return }
-      if (req.method === 'POST' && path === `${ROUTE_PREFIX}/connect`) {
+      let snapshot: BridgeSnapshot
+      if (req.method === 'GET' && path === `${ROUTE_PREFIX}/status`) snapshot = bridge.snapshot()
+      else if (req.method === 'POST' && path === `${ROUTE_PREFIX}/connect`) {
         let input: ConnectInput
-        try { input = await readInput(req) } catch { respond(res, 400, { ok: false, error: 'Invalid connection request' }); return }
-        respond(res, 200, { ...await bridge.connect(input), ok: true }); return
-      }
-      if (req.method === 'POST' && path === `${ROUTE_PREFIX}/cancel`) { respond(res, 200, { ...await bridge.cancel(), ok: true }); return }
-      if (req.method === 'POST' && path === `${ROUTE_PREFIX}/disconnect`) { respond(res, 200, { ...await bridge.disconnect(), ok: true }); return }
-      respond(res, 404, { ok: false, error: 'unknown endpoint' })
+        try { input = await readInput(req) } catch { return respond(res, 400, { ok: false, error: 'Invalid connection request' }) }
+        snapshot = await bridge.connect(input)
+      } else if (req.method === 'POST' && path === `${ROUTE_PREFIX}/cancel`) snapshot = await bridge.cancel()
+      else if (req.method === 'POST' && path === `${ROUTE_PREFIX}/disconnect`) snapshot = await bridge.disconnect()
+      else return respond(res, 404, { ok: false, error: 'unknown endpoint' })
+      respond(res, 200, { ...snapshot, ok: true })
     } catch {
       // Do not echo request bodies, authorization headers, or upstream error text here.
       respond(res, 500, { ok: false, error: 'GitHub operation failed; check the connection status' })

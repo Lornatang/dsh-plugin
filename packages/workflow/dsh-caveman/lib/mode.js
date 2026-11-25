@@ -17,10 +17,8 @@ function transition(mode, message, configured) {
     const change = parser.parseModeChange(text, { getDefaultMode: () => configured });
     if (!change)
         return { mode, action: 'none' };
-    if (change.action === 'status')
-        return { mode, action: 'status' };
-    if (change.action === 'unresolved')
-        return { mode, action: 'unresolved' };
+    if (change.action === 'status' || change.action === 'unresolved')
+        return { mode, action: change.action };
     if (change.action === 'clear')
         return { mode: 'off', action: 'change' };
     if (change.mode && parser.INDEPENDENT_MODES.has(change.mode))

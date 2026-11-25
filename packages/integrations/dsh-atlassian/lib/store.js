@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
+const REDIRECT_CREDENTIALS = ['clientInformation', 'tokens', 'codeVerifier'];
 /** Compare the bearer and refresh credentials, not object identity across reloads. */
 export function sameTokens(left, right) {
     return left === right || !!left && !!right && left.access_token === right.access_token && left.refresh_token === right.refresh_token;
@@ -210,25 +211,19 @@ export class SessionStore {
                 throw new Error('atlassian: connection cancelled');
             if ((expected || guard) && !sameTokens(this.#value.tokens, expected))
                 throw new Error('atlassian: credentials changed; reconnect to continue');
-            const next = { ...this.#value, ...patch, version: 1 };
-            await this.#flush(next);
-            this.#value = next;
+            await this.#commit({ ...this.#value, ...patch, version: 1 });
         }, lease, signal);
     }
     /** A secondary process must not discard credentials merely because its callback port is busy. */
     async prepareRedirect(actual, signal) {
         await this.#withLease(async () => {
             const previous = this.#value.redirectUri;
-            if (previous && previous !== actual && this.#value.tokens)
+            const changed = !!previous && previous !== actual;
+            if (changed && this.#value.tokens)
                 return;
-            const next = { ...this.#value, redirectUri: actual, version: 1 };
-            if (previous && previous !== actual) {
-                delete next.clientInformation;
-                delete next.tokens;
-                delete next.codeVerifier;
-            }
-            await this.#flush(next);
-            this.#value = next;
+            const next = this.#withoutFields(changed ? REDIRECT_CREDENTIALS : []);
+            next.redirectUri = actual;
+            await this.#commit(next);
         }, undefined, signal);
     }
     /** Re-register only when a new interactive flow needs a different callback. */
@@ -238,12 +233,9 @@ export class SessionStore {
                 throw new Error('atlassian: connection cancelled');
             if (this.#value.tokens && !sameTokens(this.#value.tokens, expected))
                 return;
-            const next = { ...this.#value, redirectUri: actual, version: 1 };
-            delete next.clientInformation;
-            delete next.tokens;
-            delete next.codeVerifier;
-            await this.#flush(next);
-            this.#value = next;
+            const next = this.#withoutFields(REDIRECT_CREDENTIALS);
+            next.redirectUri = actual;
+            await this.#commit(next);
         }, lease, signal);
     }
     async saveTokens(tokens, active, expected, lease, signal, guard = false) {
@@ -252,9 +244,7 @@ export class SessionStore {
                 throw new Error('atlassian: connection cancelled');
             if ((expected || guard) && !sameTokens(this.#value.tokens, expected) && !sameTokens(this.#value.tokens, tokens))
                 return;
-            const next = { ...this.#value, tokens, version: 1 };
-            await this.#flush(next);
-            this.#value = next;
+            await this.#commit({ ...this.#value, tokens, version: 1 });
         }, lease, signal);
     }
     /**
@@ -269,25 +259,13 @@ export class SessionStore {
                 throw new Error('atlassian: connection cancelled');
             if ((expected || guard) && !sameTokens(this.#value.tokens, expected))
                 return;
-            const next = { ...this.#value, version: 1 };
-            for (const field of fields)
-                if (field !== 'version')
-                    delete next[field];
-            await this.#flush(next);
-            this.#value = next;
+            await this.#commit(this.#withoutFields(fields));
             cleared = true;
         }, lease, signal);
         return cleared;
     }
     async clear(...fields) {
-        await this.#withLease(async () => {
-            const next = { ...this.#value, version: 1 };
-            for (const field of fields)
-                if (field !== 'version')
-                    delete next[field];
-            await this.#flush(next);
-            this.#value = next;
-        });
+        await this.#withLease(() => this.#commit(this.#withoutFields(fields)));
     }
     async destroy() {
         await this.#withLease(async () => {
@@ -296,7 +274,14 @@ export class SessionStore {
             this.#value = { version: 1 };
         });
     }
-    async #flush(value) {
+    #withoutFields(fields) {
+        const next = { ...this.#value, version: 1 };
+        for (const field of fields)
+            if (field !== 'version')
+                delete next[field];
+        return next;
+    }
+    async #commit(value) {
         await mkdir(dirname(this.#file), { recursive: true, mode: 0o700 });
         await (await secureExistingFile(this.#file))?.close();
         const temporary = `${this.#file}.${randomBytes(12).toString('hex')}.tmp`;
@@ -314,5 +299,6 @@ export class SessionStore {
         finally {
             await rm(temporary, { force: true });
         }
+        this.#value = value;
     }
 }

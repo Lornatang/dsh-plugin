@@ -10,6 +10,7 @@ export type Disposition = 'reported' | 'no_issue_found' | 'rejected' | 'not_appl
 export type FindingStatus = 'open' | 'triaged' | 'fixed' | 'false_positive' | 'accepted_risk' | 'wont_fix'
 
 export const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'informational']
+export const EMPTY_SEVERITY_COUNTS: Readonly<Record<Severity, number>> = Object.freeze({ critical: 0, high: 0, medium: 0, low: 0, informational: 0 })
 export const SEVERITY_SCORE: Record<Severity, number> = { critical: 9.5, high: 8.0, medium: 5.0, low: 2.0, informational: 0.0 }
 export const FINDING_STATUSES: FindingStatus[] = ['open', 'triaged', 'fixed', 'false_positive', 'accepted_risk', 'wont_fix']
 export const DISPOSITIONS: Disposition[] = ['reported', 'no_issue_found', 'rejected', 'not_applicable', 'needs_follow_up']
