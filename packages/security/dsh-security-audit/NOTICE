@@ -1,2 +1,7 @@
 dsh-security-audit
 Copyright 2026 Lornatang and contributors
+
+This package includes material adapted from Cloudflare security-audit-skill,
+Copyright 2025-2026 Cloudflare, Inc., licensed under the MIT License.
+The upstream baseline is c1c8a8c1471069fb0e188eeaff69b8e8db6564a8.
+https://github.com/cloudflare/security-audit-skill

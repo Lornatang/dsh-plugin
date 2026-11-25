@@ -622,7 +622,6 @@ function validateAttempts(value, unit, base, errors) {
     validateStateInvariants(attempt, attemptBase, errors);
 
     if (Array.isArray(attempt.local_checks)) {
-      const attemptArtifacts = [];
       attempt.local_checks.forEach((check, checkIndex) => {
         if (!isObject(check)) return;
         if (priorOwners.has(check.agent_id)) {
@@ -631,9 +630,8 @@ function validateAttempts(value, unit, base, errors) {
         if (typeof check.artifact === "string" && priorArtifacts.has(check.artifact)) {
           errors.push(`${attemptBase}.local_checks[${checkIndex}].artifact: artifact from an earlier attempt cannot be reused`);
         }
-        if (check.method === "local" && typeof check.artifact === "string") attemptArtifacts.push(check.artifact);
+        if (check.method === "local" && typeof check.artifact === "string") priorArtifacts.add(check.artifact);
       });
-      for (const artifact of attemptArtifacts) priorArtifacts.add(artifact);
     }
     if (hasFreshOwner) priorOwners.add(attempt.agent_id);
   });

@@ -439,7 +439,7 @@ test("preserves candidate provenance when reassignment must be deferred", () => 
   assert.deepEqual(errorsFor([deferred]), []);
 });
 
-test("preserves a shared artifact when local checks are archived together", () => {
+test("applies the upstream artifact reuse rule when an attempt is archived", () => {
   const localChecks = [
     localCheck(),
     localCheck("hunter-1", { invariant: "An unauthenticated request is denied." }),
@@ -459,7 +459,9 @@ test("preserves a shared artifact when local checks are archived together", () =
     status: "in_progress",
     agent_id: "hunter-2",
   });
-  assert.deepEqual(errorsFor([reassigned]), []);
+  assert.deepEqual(errorsFor([reassigned]), [
+    "$[0].attempts[0].local_checks[1].artifact: artifact from an earlier attempt cannot be reused",
+  ]);
 });
 
 test("rejects reassignment owner reuse and evidence mixing", () => {

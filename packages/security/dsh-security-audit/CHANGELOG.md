@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.11
+
+- Match Cloudflare's reference coverage-ledger decision when checks in an archived attempt reuse the same artifact.
+- Reduce allocations and copies in bounded POSIX input reads, including when a file grows after it is opened.
+- Document the upstream baseline and artifact-compatibility scope.
+
 ## 0.1.10
 
 - Update the TypeScript and DSH development dependencies.

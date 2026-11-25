@@ -95,6 +95,8 @@ bundle 自带以下 patch；没有声明插件专用配置字段：
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+工作流和报告 schema 以 [Cloudflare security-audit-skill `c1c8a8c`](https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8) 为基准。归档尝试中复用同一证据文件的判定已与上游对齐。若 0.1.10 保存的账本在同一归档尝试内重复引用证据，新版校验可能拒绝该账本。DSH 使用自己的跨平台有界读取器。审计发现取决于宿主、模型和实际审查条件。
+
 <details>
 <summary>实现内幕 — 点击展开</summary>
 

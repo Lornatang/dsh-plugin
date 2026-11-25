@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import fs from 'node:fs'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -46,6 +47,31 @@ test('Windows bounded reads preserve multi-chunk UTF-8 and the exact byte limit'
   const bytes = Buffer.byteLength(contents)
   await writeFile(file, contents)
   assert.equal(readFileWithinLimit(file, bytes), contents)
+  assert.throws(() => readFileWithinLimit(file, bytes - 1), /input exceeds .* byte limit/u)
+})
+
+test('POSIX bounded reads handle growth after stat without passing the byte limit', {
+  skip: process.platform === 'win32' || !fs.constants.O_NOFOLLOW || !fs.constants.O_NONBLOCK,
+}, async (t) => {
+  const { readFileWithinLimit } = createRequire(import.meta.url)('../skills/security-audit/bounded-input.cjs')
+  const file = join(root, 'growing-input.json')
+  const initial = 'a'.repeat(65535)
+  const suffix = '€\n'
+  const bytes = Buffer.byteLength(initial + suffix)
+  const statFile = fs.fstatSync
+  let grow = true
+  t.mock.method(fs, 'fstatSync', descriptor => {
+    const stat = statFile(descriptor)
+    if (grow) {
+      grow = false
+      fs.appendFileSync(file, suffix)
+    }
+    return stat
+  })
+  await writeFile(file, initial)
+  assert.equal(readFileWithinLimit(file, bytes), initial + suffix)
+  await writeFile(file, initial)
+  grow = true
   assert.throws(() => readFileWithinLimit(file, bytes - 1), /input exceeds .* byte limit/u)
 })
 

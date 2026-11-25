@@ -35,18 +35,23 @@ function readFileWithinLimit(file, limit) {
     if (!stat.isFile()) throw new SafeInputError("input must be a regular file");
     if (stat.size > limit) throw new SafeInputError(`input exceeds ${limit} byte limit`);
 
-    const chunks = [];
-    const buffer = Buffer.allocUnsafe(64 * 1024);
+    // Use the size of the opened file as a hint. Reserve a byte to detect EOF
+    // without a second allocation when the size is unchanged.
+    let buffer = Buffer.allocUnsafe(stat.size + 1);
     let bytesRead = 0;
     while (true) {
-      const count = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      const count = fs.readSync(descriptor, buffer, bytesRead, buffer.length - bytesRead, null);
       if (count === 0) break;
       bytesRead += count;
       if (bytesRead > limit) throw new SafeInputError(`input exceeds ${limit} byte limit`);
-      chunks.push(Buffer.from(buffer.subarray(0, count)));
+      if (bytesRead === buffer.length) {
+        const grown = Buffer.allocUnsafe(Math.min(limit + 1, Math.max(buffer.length * 2, 64 * 1024)));
+        buffer.copy(grown, 0, 0, bytesRead);
+        buffer = grown;
+      }
     }
     try {
-      return UTF8_DECODER.decode(Buffer.concat(chunks, bytesRead));
+      return UTF8_DECODER.decode(buffer.subarray(0, bytesRead));
     } catch {
       throw new SafeInputError("input is not valid UTF-8");
     }

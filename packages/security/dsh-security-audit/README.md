@@ -95,6 +95,8 @@ The row requires the host's `skills` service. Its provider contributes the `secu
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The workflow and report schema derive from [Cloudflare security-audit-skill at `c1c8a8c`](https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8). The validators follow the reference decision for reused artifacts in archived attempts. Ledgers accepted by 0.1.10 that repeat an artifact within an archived attempt can now fail validation. DSH uses its own bounded, platform-specific input readers. Audit findings depend on the host, model and review conditions.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
