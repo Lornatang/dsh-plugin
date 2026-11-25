@@ -1,4 +1,4 @@
-type ArtifactKind = 'findings' | 'coverage' | 'scan-manifest';
+type ArtifactKind = 'findings' | 'coverage' | 'scan-manifest' | 'patch-risk-assessment';
 export declare function compileToolArguments(schema: object): (value: unknown) => void;
 /** Validate the exact documents shipped by this package before publishing a seal. */
 export declare function assertArtifactContract(kind: ArtifactKind, value: unknown): void;

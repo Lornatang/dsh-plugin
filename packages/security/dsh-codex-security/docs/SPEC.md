@@ -5,7 +5,7 @@ The project provides an independent DSH implementation of a skill-driven static 
 ## Product surface
 
 - Package: `@lornatang/dsh-codex-security`; plugin and patch row: `codex-security`.
-- Host: 31 `codex_security_*` tools and 16 bundled skills. `tools` and `skills` are required Cordis services.
+- Host: 33 `codex_security_*` tools and 20 bundled skills. `tools` and `skills` are required Cordis services.
 - Client: one **Codex Security** settings section backed by local HTTP routes.
 - Scan modes: `standard`, `prompt-only`, `deep`. `codex_security_start_scan` uses the configured default; named start tools select their mode explicitly.
 - Automatic Deep dispatches isolated DSH workers, enforces concurrency, attempt, no-new and wall-clock limits, and journals recovery. A manual mode remains available.
@@ -36,7 +36,9 @@ State is local. SQLite OS locks serialize campaign ownership, scan mutations and
 
 ## Workbench and routes
 
-The host registers `/plugins/codex-security` routes for status, configuration, scans, findings, triage, remediation and exports. The client displays scan state, findings, coverage, exports and an age warning based on `maxScanAgeDays`. It uses the DSH `settings.section` slot and does not initiate scans itself.
+The host registers `/plugins/codex-security` routes for status, configuration, scans, findings, triage, remediation and exports. The client displays scan state, findings, coverage, exports and an age warning based on `maxScanAgeDays`. It uses the DSH `settings.section` slot.
+
+The authenticated `GET /scans/:id/threat-model` route reads the sealed model and verifies the file digest against the saved manifest. It returns `threatModel: null` while a scan is running or has no sealed model. The preview reports an integrity error for changed artifacts and a size error above 1 MiB.
 
 ## Security and scope
 

@@ -76,6 +76,7 @@ export declare class SecurityService {
     private cancelScanUnlocked;
     listScans(args: Json): Promise<Json>;
     getScan(args: Json): Promise<Json>;
+    getThreatModel(args: Json): Promise<Json>;
     private findingsWithStatus;
     listFindings(args: Json): Promise<Json>;
     setFindingTriage(args: Json): Promise<Json>;

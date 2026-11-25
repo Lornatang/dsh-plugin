@@ -22,12 +22,12 @@ The package must include `lib/`, `cordis.patch.yml`, `skills/`, `references/`, `
 
 ## Optional isolated DSH check
 
-Use a disposable DSH home rather than a working profile. Generate a tarball with `npm pack`, capture the actual filename printed by npm, and install it into a profile under that temporary home. Check that the host loads, all 16 skills can be read, and the workbench routes respond. Remove the disposable home after the check. This exercise may need npm registry access to install package dependencies.
+Use a disposable DSH home rather than a working profile. Generate a tarball with `npm pack`, capture the actual filename printed by npm, and install it into a profile under that temporary home. Check that the host loads, all 20 skills can be read, and the workbench routes respond. Remove the disposable home after the check. This exercise may need npm registry access to install package dependencies.
 
 ## Artifact checks
 
 Findings, coverage and manifest documents are validated against `schemas/` by the host before sealing. The regression suite independently validates generated examples and checks the SHA-256 digest of a sealed supporting artifact. Check a complete manual review as well when changing the workflow: account for each bound diff file, compare only compatible completed scans, and verify that attempted post-completion writes fail.
 
-For an optional interoperability check, set `CODEX_SECURITY_REFERENCE_ROOT` to an installed Codex Security 0.1.32 plugin directory and run `npm test` with Python available on `PATH`. The test passes a generated completed scan to that installation's `scripts/validate_scan_contract.py`. CI does not require that separate plugin.
+For an optional interoperability check, set `CODEX_SECURITY_REFERENCE_ROOT` to the official Codex Security plugin directory and run `npm test` with Python available on `PATH`. The tests pass generated Standard and Deep scan artifacts to the official `scripts/validate_scan_contract.py`. The latest checked source is the plugin shipped with OpenAI CLI 0.11.0.
 
 A green build confirms the exercised behavior. It does not establish that an agent actually reviewed every claimed surface or that the target has no vulnerabilities.

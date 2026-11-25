@@ -66,6 +66,14 @@ interface StatusResponse { version?: string; stateDir?: string; scans?: number; 
 interface ScansResponse { scans?: ScanSummary[]; total?: number }
 interface ScanDetailResponse { scan?: ScanRecord; findings?: Finding[]; coverage?: CoverageDocument | null; artifacts?: ArtifactInfo[] }
 interface FindingsResponse { total?: number }
+interface ThreatModelResponse {
+  sha256?: string
+  threatModel: {
+    format?: string; content?: string; origin?: string; scope?: ScanScope
+    summary?: string; assets?: string[]; trustBoundaries?: string[]
+    attackerCapabilities?: string[]; securityObjectives?: string[]; assumptions?: string[]
+  } | null
+}
 
 /* ---------------------------------------------------------------- HTTP */
 
@@ -308,6 +316,51 @@ function FindingsTable(props: { scanId: string; findings: Finding[]; busyFinding
 
 /* --------------------------------------------------------- scan detail */
 
+function ThreatModelPanel({ scanId }: { scanId: string }) {
+  const [open, setOpen] = React.useState(false)
+  const [result, setResult] = React.useState<ThreatModelResponse | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    setError(null)
+    fetchJson<ThreatModelResponse>('/scans/' + encodeURIComponent(scanId) + '/threat-model', controller.signal)
+      .then(value => { if (!controller.signal.aborted) setResult(value) })
+      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(describeError(reason)) })
+    return () => controller.abort()
+  }, [scanId, open])
+  const model = result?.threatModel
+  const sections = [
+    { title: 'Protected assets', values: model?.assets },
+    { title: 'Trust boundaries', values: model?.trustBoundaries },
+    { title: 'Attacker capabilities', values: model?.attackerCapabilities },
+    { title: 'Security objectives', values: model?.securityObjectives },
+    { title: 'Assumptions', values: model?.assumptions },
+  ]
+  return <Panel title="Threat model">
+    <details onToggle={event => setOpen(event.currentTarget.open)}>
+      <summary>Inspect saved model</summary>
+      {error ? <p role="alert">{error}</p> : result === null ? <p role="status">Loading model…</p>
+        : model === null || model === undefined ? <p className="dcs-muted">No sealed threat model for this scan.</p>
+          : <>
+            <p className="dcs-hint">SHA-256 <code className="dcs-modelDigest">{result.sha256}</code></p>
+            {model.origin ? <p className="dcs-hint">Origin {model.origin}</p> : null}
+            {model.scope?.summary ? <p>{model.scope.summary}</p> : null}
+            {model.scope?.includePaths?.length ? <p className="dcs-hint">Included {model.scope.includePaths.join(', ')}</p> : null}
+            {model.scope?.excludePaths?.length ? <p className="dcs-hint">Excluded {model.scope.excludePaths.join(', ')}</p> : null}
+            {model.format === 'markdown' ? <pre className="dcs-modelText">{model.content}</pre> : <>
+              {model.summary ? <p>{model.summary}</p> : null}
+              {sections.map(section => Array.isArray(section.values) && section.values.length > 0
+                ? <details key={section.title} open={section.title === 'Trust boundaries'}>
+                  <summary>{section.title} ({section.values.length})</summary>
+                  <ul>{section.values.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                </details> : null)}
+            </>}
+          </>}
+    </details>
+  </Panel>
+}
+
 function ScanDetailPanel(props: {
   detail: ScanDetailResponse | null; selectedId: string | null; loading: boolean; error: string | null
   busyFindingId: string | null; now: number; maxScanAgeDays?: number; onTriage: (scanId: string, findingId: string, status: FindingStatus) => void
@@ -381,6 +434,7 @@ function ScanDetailPanel(props: {
       <Panel title="Findings" meta={<SeverityChips counts={counts} />}>
         <FindingsTable scanId={scan.scanId} findings={findings} busyFindingId={busyFindingId} onTriage={onTriage} />
       </Panel>
+      {scan.status === 'completed' ? <ThreatModelPanel key={scan.scanId} scanId={scan.scanId} /> : null}
       <Panel title="Coverage" meta={coverage?.mode ? 'mode: ' + coverage.mode : undefined}>
         {coverage ? <p className="dcs-hint">Recorded coverage {coverage.completeness ?? 'unknown'} · Unit records with verified source and a disposition: {evidencedUnits}</p> : null}
         {surfaces.length === 0 ? (
@@ -589,6 +643,7 @@ const DEFAULT_STYLE = `
 .dcs-phase strong{color:var(--dsw-alias-label-primary,#e7e8ea);font-weight:600}.dcs-surfaceLabel{display:block}
 .dcs-surfaceId{display:block;color:var(--dsw-alias-label-caption,#6f727b)}.dcs-artifacts{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
 .dcs-artifacts li{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.dcs-artifactSize{flex:none;color:var(--dsw-alias-label-caption,#6f727b);font-size:10px}
+.dcs-modelDigest{overflow-wrap:anywhere}.dcs-modelText{white-space:pre-wrap;overflow-wrap:anywhere;max-height:24rem;overflow:auto}
 .dcs-exportRow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.dcs-exportLabel{color:var(--dsw-alias-label-tertiary,#8a8d95);font-size:11px}
 .dcs-srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 `

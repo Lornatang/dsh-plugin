@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { apply, loadBundledSkills, SecurityService } from '../lib/index.js'
 import { bindRoutes, handleRequest } from '../lib/routes.js'
 import { normalizeFinding, normalizeAnchor, policyGate, toSarif } from '../lib/contracts.js'
+import { assertArtifactContract } from '../lib/schema.js'
+import { createSecurityTools } from '../lib/tools.js'
 import { SKILL_NAMES, TOOL_NAMES } from '../lib/constants.js'
 import { ScanStore } from '../lib/store.js'
 
@@ -80,7 +82,7 @@ test('apply registers the documented tool surface and bundled skills', async () 
   const stateDir = await tempDir('dcs-state-')
   const ctx = mockContext(join(stateDir, 'cordis.patch.yml'))
   apply(ctx, { stateDir })
-  assert.equal(ctx.registeredTools.length, 31)
+  assert.equal(ctx.registeredTools.length, 33)
   const names = ctx.registeredTools.map((tool) => tool.name).sort()
   assert.deepEqual(names, [...TOOL_NAMES].sort())
   for (const tool of ctx.registeredTools) {
@@ -91,6 +93,8 @@ test('apply registers the documented tool surface and bundled skills', async () 
     assert.ok((tool.timeoutMs ?? 0) > 0)
   }
   const skills = loadBundledSkills(repoRoot)
+  assert.ok(skills.some(skill => skill.name === 'check-skills'))
+  assert.ok(skills.some(skill => skill.name === 'threat-model-visualize'))
   const skillNames = skills.map((skill) => skill.name).sort()
   assert.deepEqual(skillNames, [...SKILL_NAMES].sort())
   for (const skill of skills) {
@@ -99,6 +103,29 @@ test('apply registers the documented tool surface and bundled skills', async () 
     assert.ok(!skill.content.startsWith('---'))
   }
   assert.equal(ctx.registeredSkills.length, skills.length)
+})
+
+test('patch risk validates a complete review and rejects incomplete reports', async () => {
+  assert.throws(() => assertArtifactContract('patch-risk-assessment', {}),
+    /invalid patch-risk-assessment artifact.*required property/s)
+  const assessment = {
+    schemaVersion: 1,
+    patch: { repository: 'application', sourceType: 'commit_range', base: 'base', head: 'head', changedFiles: ['README.md'], sha256: 'a'.repeat(64) },
+    recommendation: 'hold_for_evidence', workflowLabel: 'human_review_required',
+    impact: { rating: 'low', rationale: 'The changed file is documentation.' },
+    regressionLikelihood: { rating: 'low', rationale: 'The runtime configuration is unchanged.' },
+    regressionProtection: { rating: 'unknown', rationale: 'No checks for this revision are recorded.', exactHeadChecksPassed: false },
+    recoverability: { rating: 'easy', rationale: 'The prior documentation can be restored.' },
+    confidence: { rating: 'moderate', rationale: 'The patch is available without runtime results.' },
+    applicability: { status: 'confirmed', rationale: 'The patch changes the current documentation.' },
+    statusQuoRisk: { rating: 'low', rationale: 'The existing documentation still applies.' },
+    autoMergeExclusions: [], affectedRuntimeRoots: [], materialBoundaries: [],
+    validation: [{ name: 'Documentation checks', status: 'unavailable', protects: 'Working examples' }],
+    unknowns: [], evidencePlan: [],
+  }
+  const tools = createSecurityTools(new SecurityService({}))
+  const validate = tools.find(tool => tool.name === 'codex_security_validate_patch_risk')
+  assert.deepEqual(await validate.execute({ assessment }), { ok: true, schema: 'patch-risk-assessment' })
 })
 
 test('finding identity is stable across scans and occurrence identity is scan-specific', () => {
@@ -231,7 +258,8 @@ test('routes expose status, scan list and sealed artifacts', async () => {
     const ctx = mockContext(join(stateDir, 'cordis.patch.yml'))
     const service = new SecurityService(ctx, { config: { stateDir } })
     const started = await service.startScan({ targetPath: target }, 'standard')
-    await service.recordScanDraft({ scanId: started.scanId, draft: sampleDraft(started.scanId) })
+    const model = { summary: 'The application accepts input from authorized users.', assets: ['Customer records'], trustBoundaries: ['Browser to API'] }
+    await service.recordScanDraft({ scanId: started.scanId, draft: sampleDraft(started.scanId, { threatModel: model }) })
     await service.completeScan({ scanId: started.scanId })
 
     const call = async (pathname) => {
@@ -260,6 +288,24 @@ test('routes expose status, scan list and sealed artifacts', async () => {
     const scan = await call('/plugins/codex-security/scans/' + started.scanId)
     assert.equal(scan.status, 200)
     assert.equal(JSON.parse(scan.body).scan.scanId, started.scanId)
+
+    const modelPath = '/plugins/codex-security/scans/' + started.scanId + '/threat-model'
+    const threatModel = await call(modelPath)
+    assert.equal(threatModel.status, 200)
+    assert.equal(threatModel.headers['cache-control'], 'no-store')
+    assert.deepEqual(JSON.parse(threatModel.body).threatModel, model)
+    assert.match(JSON.parse(threatModel.body).sha256, /^[a-f0-9]{64}$/u)
+
+    const unsealed = await service.startScan({ targetPath: target, threatModel: model }, 'standard')
+    const unsealedModel = await call('/plugins/codex-security/scans/' + unsealed.scanId + '/threat-model')
+    assert.equal(unsealedModel.status, 200)
+    assert.equal(JSON.parse(unsealedModel.body).threatModel, null)
+
+    const found = await service.store.get(started.scanId)
+    await writeFile(join(found.dir, 'threat-model.md'), '# Modified after sealing')
+    const changed = await call(modelPath)
+    assert.equal(changed.status, 409)
+    assert.doesNotMatch(changed.body, /Modified after sealing/)
 
     const exported = await call('/plugins/codex-security/export/' + started.scanId + '?format=markdown')
     assert.equal(exported.status, 200)

@@ -1,5 +1,5 @@
 ---
-description: "为 dsh profile 提供基于产物文件的安全审查能力：31 个 host 工具、16 个内置技能，以及一个把经过 schema 校验的扫描、发现、覆盖与导出封存在 profile 数据目录下的 Web 工作台。"
+description: "为 dsh profile 提供基于产物文件的安全审查能力：33 个 host 工具、20 个内置技能，以及一个把经过 schema 校验的扫描、发现、覆盖与导出封存在 profile 数据目录下的 Web 工作台。"
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概要
 
-`dsh-codex-security` 为 dsh profile 增加一套可复现的安全审查流程。它注册 31 个 `codex_security_*` host 工具、16 个内置技能，以及 Web GUI 中的 Codex Security 区块，用于查看扫描、发现、覆盖情况与导出结果。`add` 命令向 profile 插入一条 patch 行，`remove` 命令将其移除。本包记录并校验 agent 提交的审查内容，也可自动协调相互独立的 Deep worker；它不执行目标代码，完成的扫描会在 profile 数据目录下封存不可变产物。
+`dsh-codex-security` 为 dsh profile 增加一套可复现的安全审查流程。它注册 33 个 `codex_security_*` host 工具、20 个内置技能，以及 Web GUI 中的 Codex Security 区块，用于查看扫描、发现、覆盖情况与导出结果。`add` 命令向 profile 插入一条 patch 行，`remove` 命令将其移除。本包记录并校验 agent 提交的审查内容，也可自动协调相互独立的 Deep worker；它不执行目标代码，完成的扫描会在 profile 数据目录下封存不可变产物。
 
 ## 目录
 
@@ -38,17 +38,17 @@ dsh plugin --profile <name> remove @lornatang/dsh-codex-security
 
 `add` 命令把这一层组合进 profile：profile 的 `cordis.patch.yml` 中新增一条 insert 条目，row id 为 `codex-security`，其 `config` 从本包默认值 `maxFiles: 5000`、`maxFileBytes: 1048576`、`defaultMode: standard` 开始；其余字段取 `src/config.ts` 中的默认值。包清单把 `dsh.bundle.patch` 指向该文档。`remove` 命令删除该条目，已经写入 profile 数据目录的扫描保持不变。
 
-安装或移除后重启 DSH，因为该条目在 profile 启动时才会被组合。启动时插件会输出 `codex-security: registered 16 skills` 与 `codex-security: ready (state dir will resolve on first scan)`，Web GUI 的 Settings 中会出现 Codex Security 入口；不运行 Web 客户端的 profile 仍然会获得工具与技能。
+安装或移除后重启 DSH，因为该条目在 profile 启动时才会被组合。启动时插件会输出 `codex-security: registered 20 skills` 与 `codex-security: ready (state dir will resolve on first scan)`，Web GUI 的 Settings 中会出现 Codex Security 入口；不运行 Web 客户端的 profile 仍然会获得工具与技能。
 
 新 profile 初始没有任何扫描。第一次访问存储的请求——工作台的状态请求或 `codex_security_inspect_setup`——会解析状态目录并创建 `<stateDir>/repositories/`；只有在某个 start 工具运行之后才会出现扫描记录，插件本身不会审查任何内容。
 
-扫描位于 `<stateDir>/repositories/<repoKey>/scans/<scanId>/` 下：`repoKey` 是目标根路径 SHA-256 的前 16 个十六进制字符，`scanId` 是 `cs_` 加 24 个十六进制字符；`<stateDir>` 默认为 profile 的 `cordis.patch.yml` 同级的 `data/codex-security`（随 dsh 发布的 Web profile 即 `$DSH_HOME/profiles/web/data/codex-security`）。`scan.json` 保存绑定的目标、范围、清单、进度与 diff 列表；`index.json` 是可重建的列表缓存。完成扫描要求提交 `complete: true` 的草稿、至少一个覆盖面、每个候选与每个绑定 diff 文件的最终处置，以及未变化的快照摘要；随后插件按 `schemas/` 校验 findings、coverage 与 manifest 文档，把哈希记录进 `scan-manifest.json` 并封存扫描。已封存的产物不可修改，triage 单独存储且可继续编辑，导出默认写入 `<stateDir>/exports/<scanId>.<format>`。
+扫描位于 `<stateDir>/repositories/<repoKey>/scans/<scanId>/` 下：`repoKey` 是目标根路径 SHA-256 的前 20 个十六进制字符，`scanId` 是 `cs_` 加 24 个十六进制字符；`<stateDir>` 默认为 profile 的 `cordis.patch.yml` 同级的 `data/codex-security`（随 dsh 发布的 Web profile 即 `$DSH_HOME/profiles/web/data/codex-security`）。`scan.json` 保存绑定的目标、范围、清单、进度与 diff 列表；`index.json` 是可重建的列表缓存。完成扫描要求提交 `complete: true` 的草稿、至少一个覆盖面、每个候选与每个绑定 diff 文件的最终处置，以及未变化的快照摘要；随后插件按 `schemas/` 校验 findings、coverage 与 manifest 文档，把哈希记录进 `scan-manifest.json` 并封存扫描。已封存的产物不可修改，triage 单独存储且可继续编辑，导出默认写入 `<stateDir>/exports/<scanId>.<format>`。
 
 重复使用默认路径导出时会增加数字后缀；显式指定的输出路径不能已存在。
 
 ### 本包提供的内容
 
-本包在组合后的 profile 中拥有三个表面：31 个 host 工具、16 个技能，以及 Web GUI 中的一个工作台区块。[docs/TOOLS.md](docs/TOOLS.md) 记录了每个工具的参数与返回结构；[docs/CODEX-COMPATIBILITY.md](docs/CODEX-COMPATIBILITY.md) 说明与 Codex Security 的差异。
+本包在组合后的 profile 中拥有三个表面：33 个 host 工具、20 个技能，以及 Web GUI 中的一个工作台区块。[docs/TOOLS.md](docs/TOOLS.md) 记录了每个工具的参数与返回结构；[docs/CODEX-COMPATIBILITY.md](docs/CODEX-COMPATIBILITY.md) 说明与 Codex Security 的差异。
 
 - **初始化与目标检查：** `codex_security_inspect_setup`、`codex_security_inspect_target`。
 - **扫描生命周期：** `codex_security_start_scan`、`codex_security_start_standard_scan`、`codex_security_start_prompt_only_scan`、`codex_security_start_deep_scan`、`codex_security_resume_deep_scan`、`codex_security_get_deep_scan_status`、`codex_security_get_scan_context`、`codex_security_update_scan_context`、`codex_security_update_scan_progress`。
@@ -61,9 +61,11 @@ dsh plugin --profile <name> remove @lornatang/dsh-codex-security
 - **查询与比较：** `codex_security_list_scans`、`codex_security_get_scan`、`codex_security_compare_scans`。
 - **导出：** `codex_security_export_findings`。
 
-技能目录新增 16 个条目，启动时分别从 `skills/<name>/SKILL.md` 加载，标记为 `source: bundled`，同时支持模型与用户调用：`security-scan`、`security-diff-scan`、`deep-security-scan`、`fix-finding`、`verify-fix`、`triage-finding`、`threat-model`、`track-findings`、`resolve-dependency-alert`、`vulnerability-writeup`、`assess-patch-risk`、`attack-path-analysis`、`define-security-policy`、`finding-discovery`、`propose-security-hardening`、`validation`；每个工作流的文本位于 [skills/](skills/)。
+技能目录新增 20 个条目，启动时分别从 `skills/<name>/SKILL.md` 加载，标记为 `source: bundled`，同时支持模型与用户调用：`security-scan`、`security-diff-scan`、`deep-security-scan`、`fix-finding`、`verify-fix`、`triage-finding`、`threat-model`、`track-findings`、`resolve-dependency-alert`、`vulnerability-writeup`、`assess-patch-risk`、`attack-path-analysis`、`define-security-policy`、`finding-discovery`、`propose-security-hardening`、`validation`、`check-skills`、`threat-model-visualize`、`cloud-findings`、`publish-findings`；每个工作流的文本位于 [skills/](skills/)。
 
 Web GUI 新增一条 `settings.section` 行，id 为 `codex-security`，order 为 41，label 为 Codex Security，由本包的客户端部分（`src/client/index.tsx`，发布为 `lib/client.js`）通过 `@deepseek-ai/dsh-client-ui-slots` 与 `@deepseek-ai/dsh-client-ui-settings` 注册。面板显示版本、解析后的状态目录以及扫描与发现数量；它按状态与时间列出扫描，并打开所选扫描的 Overview、Findings、Coverage 与 Artifacts & exports 面板，其中包含 triage 选择器以及 SARIF、JSON、CSV、Markdown 下载链接。面板通过 `/plugins/codex-security` 下的 HTTP 路由读取同一个服务。
+
+已完成扫描可在工作台打开 **Threat model**。面板按需加载，展示前校验封存文件的 SHA-256。Cloud 查询与发布工作流使用宿主提供的已认证官方集成。
 
 ### 配置
 
@@ -112,7 +114,7 @@ Web GUI 新增一条 `settings.section` 行，id 为 `codex-security`，order �
 
 这一层只有一条 patch 行：`insert` 一条 id 为 `codex-security`、包名为 `@lornatang/dsh-codex-security`、带三个配置值的条目。host 侧没有任何平台门控；清单中的 `dsh.client.platform: web` 只约束客户端 bundle，host 插件会在任何注入所需服务的 profile 中注册工具与技能。
 
-Cordis 必须先注入 `tools` 与 `skills`，`apply` 才会运行。`apply` 使用解析后的配置与 profile patch 路径构建 `SecurityService`，然后分别注册 31 个工具、从 `skills/*/SKILL.md` 发现并注册16 个内置技能、绑定可选的 HTTP 路由，每一项都在可释放的 effect 中执行。启动时不会创建状态目录；`ScanStore.init` 在第一次访问存储时创建它。
+Cordis 必须先注入 `tools` 与 `skills`，`apply` 才会运行。`apply` 使用解析后的配置与 profile patch 路径构建 `SecurityService`，然后分别注册 33 个工具、从 `skills/*/SKILL.md` 发现并注册20 个内置技能、绑定可选的 HTTP 路由，每一项都在可释放的 effect 中执行。启动时不会创建状态目录；`ScanStore.init` 在第一次访问存储时创建它。
 
 start 工具解析目标、绑定版本或 diff 事实、在限额内建立可审查文件清单、计算快照摘要，并在扫描目录下写入 `scan.json`。后续工具追加草稿、候选、验证、攻击路径、审查条目与已保存产物，每次扫描的队列会串行化这些修改。完成时重新解析目标、拒绝已变化的摘要、检查草稿与覆盖约定、构建 findings、coverage、SARIF 与 Markdown 文档，按内置 schema 校验 findings、coverage 与 manifest 文档，并写入封存该扫描的 manifest。
 
@@ -131,7 +133,7 @@ SQLite 操作系统锁跨进程串行化协调器归属、扫描修改与索引�
 | `src/deep-*.ts`、`src/secure-read.ts`、`src/state-lock.ts` | Deep 编排、隔离源码读取和跨进程锁。 |
 | `src/target.ts` | 目标解析、文件清单、内容哈希，以及语言与大小上限。 |
 | `src/git.ts` | Git 版本、diff 与变更文件查询。 |
-| `src/tools.ts` | 31 个 `codex_security_*` 工具定义及其参数 schema。 |
+| `src/tools.ts` | 33 个 `codex_security_*` 工具定义及其参数 schema。 |
 | `src/routes.ts` | 工作台使用的 `/plugins/codex-security` HTTP 路由。 |
 | `src/contracts.ts` | 发现规范化与指纹、coverage、SARIF 以及策略门槛。 |
 | `src/schema.ts` | 按 `schemas/` 对封存文档执行 AJV 校验。 |
@@ -164,11 +166,11 @@ SQLite 操作系统锁跨进程串行化协调器归属、扫描修改与索引�
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过注册的 31 个工具 schema 与16 个内置技能描述：它们的名称、描述与参数 schema 进入模型的工具与技能目录，而扫描状态只有在 agent 调用工具后以 JSON 结果的形式到达模型。
+间接地，通过注册的 33 个工具 schema 与20 个内置技能描述：它们的名称、描述与参数 schema 进入模型的工具与技能目录，而扫描状态只有在 agent 调用工具后以 JSON 结果的形式到达模型。
 
 #### KV Cache 影响
 
-启用这一层会向 host 为会话构建的 prompt 前缀中加入 31 个工具定义与16 个技能目录条目，移除时则删除同样的文本。会话期间目录保持稳定，因此新增的 token 属于缓存的 prefix，不会逐轮增长；开始、更新与完成扫描只是在 prefix 之后追加普通的工具结果与 assistant 消息。自动 worker 还会收到审查提示和其请求的已验证源码分块。
+启用这一层会向 host 为会话构建的 prompt 前缀中加入 33 个工具定义与20 个技能目录条目，移除时则删除同样的文本。会话期间目录保持稳定，因此新增的 token 属于缓存的 prefix，不会逐轮增长；开始、更新与完成扫描只是在 prefix 之后追加普通的工具结果与 assistant 消息。自动 worker 还会收到审查提示和其请求的已验证源码分块。
 
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与后续工作

@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url)
 const Ajv2020 = require('ajv/dist/2020.js').default as typeof import('ajv/dist/2020.js').Ajv2020
 const addFormats = require('ajv-formats').default as typeof import('ajv-formats').default
 
-type ArtifactKind = 'findings' | 'coverage' | 'scan-manifest'
+type ArtifactKind = 'findings' | 'coverage' | 'scan-manifest' | 'patch-risk-assessment'
 const validators = new Map<ArtifactKind, ValidateFunction>()
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 addFormats(ajv)

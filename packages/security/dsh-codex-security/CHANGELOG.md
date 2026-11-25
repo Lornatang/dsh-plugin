@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17] - 2026-11-25
+
+- Add verified threat-model inspection to the host tools and Web workbench.
+- Validate patch-risk assessments against the OpenAI CLI 0.11.0 schema.
+- Add skill review, threat-model inspection and official Cloud connector workflows.
+- Resolve each scan once when listing findings and read findings and triage concurrently.
+
 ## [0.1.16] - 2026-11-23
 
 - Require authentication for the plugin web routes on current and older DSH hosts.

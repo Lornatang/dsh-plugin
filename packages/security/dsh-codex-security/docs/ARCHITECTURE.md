@@ -16,7 +16,7 @@ src/state-lock.ts               SQLite cross-process locks
 src/contracts.ts, schema.ts     Artifact construction and schema validation
 src/tools.ts, routes.ts         Agent tools and HTTP routes
 src/client/index.tsx            Workbench settings section
-skills/                         Sixteen agent workflows
+skills/                         Twenty agent workflows
 schemas/                        JSON Schema contracts
 references/                     Adapted reference material
 examples/                       Illustrative artifacts
@@ -30,7 +30,7 @@ The host build emits ESM and declarations to `lib/`; the client build emits Comm
 
 ## Host lifecycle
 
-The entry exports a default plugin object and named `name`, `inject`, `Config` and `apply`. Cordis must inject both `tools` and `skills` before `apply` runs. The plugin registers its tools, 16 skills with `source: bundled`, and optional HTTP routes in disposal-aware effects. The host adapter validates tool inputs and returns lossless JSON values.
+The entry exports a default plugin object and named `name`, `inject`, `Config` and `apply`. Cordis must inject both `tools` and `skills` before `apply` runs. The plugin registers its tools, 20 skills with `source: bundled`, and optional HTTP routes in disposal-aware effects. The host adapter validates tool inputs and returns lossless JSON values.
 
 ## Target binding
 

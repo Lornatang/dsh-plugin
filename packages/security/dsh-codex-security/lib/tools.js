@@ -1,4 +1,4 @@
-import { compileToolArguments } from './schema.js';
+import { assertArtifactContract, compileToolArguments } from './schema.js';
 import { hasDeepJournal, readDeepStatus } from './deep-coordinator.js';
 const OUTPUT_SCHEMA = { type: 'object', additionalProperties: true };
 const STRING = { type: 'string' };
@@ -96,6 +96,15 @@ export function createSecurityTools(service, getCoordinator = () => undefined) {
         return scan?.record.managedParent ? coordinator().mutateManaged(args, exec, action) : action();
     };
     return [
+        tool('codex_security_get_threat_model', 'Read the verified threat model from a completed scan by scan ID.', {
+            scanId: SCAN_ID,
+        }, ['scanId'], (args) => service.getThreatModel(args), 60000),
+        tool('codex_security_validate_patch_risk', 'Validate a patch-risk assessment against the upstream Codex Security schema. Returns structural validity only.', {
+            assessment: JSON_OBJECT,
+        }, ['assessment'], async (args) => {
+            assertArtifactContract('patch-risk-assessment', args['assessment']);
+            return { ok: true, schema: 'patch-risk-assessment' };
+        }, 60000),
         tool('codex_security_inspect_setup', 'Inspect the Codex Security plugin: version, state directory, resolved config, scan counters, git availability and available skills. Call this once before the first scan.', {}, [], () => service.inspectSetup(), 60000),
         tool('codex_security_inspect_target', 'Resolve a scan target before starting: detects git or directory targets, revision, diff/base facts, inventory size, languages, sample files and warnings. Use its output to decide scope and mode. ' + READ_ONLY, {
             targetPath: TARGET_PATH, includePaths: INCLUDE_PATHS, excludePaths: EXCLUDE_PATHS,

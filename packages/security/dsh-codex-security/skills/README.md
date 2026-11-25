@@ -1,11 +1,15 @@
 # Codex Security Skills
 
-This directory contains the 16 agent skills that ship with the Codex Security plugin for DeepSeek Harness. The plugin discovers every `skills/<name>/SKILL.md` when it starts and registers the skill automatically: there is nothing to install, enable, clone, or import, and no external command-line tool, service, database, or desktop application is required. A skill is loaded when the user selects it in the harness or when the request clearly matches its description; its instructions then guide the agent through the plugin's scan tools.
+This directory contains the 20 agent skills that ship with the Codex Security plugin for DeepSeek Harness. The plugin discovers every `skills/<name>/SKILL.md` when it starts and registers the skill automatically: there is nothing to install, enable, clone, or import, and the local workflows run within DSH. Cloud workflows require an authenticated official integration. A skill is loaded when the user selects it in the harness or when the request clearly matches its description; its instructions then guide the agent through the plugin's scan tools.
 
 ## The skills
 
 | Skill | Use it when | Main tools |
 | --- | --- | --- |
+| `check-skills` | Review a skill or bundle before enabling it. | Read-only file tools |
+| `threat-model-visualize` | Inspect a saved threat model and its integrity metadata. | `codex_security_get_threat_model` |
+| `cloud-findings` | Read existing findings from a connected official Cloud account. | Official connector read tools |
+| `publish-findings` | Prepare a scoped findings export and review an official publication preview. | `codex_security_export_findings`, official publication integration |
 | `security-scan` | The user wants a normal security review of a repository, directory, or set of files. | `codex_security_inspect_target`, `codex_security_start_standard_scan`, `codex_security_record_scan_draft`, `codex_security_complete_scan` |
 | `security-diff-scan` | The user wants a pull request, commit range, branch, patch, or working tree reviewed and every changed file accounted for. | `codex_security_prepare_review_items`, `codex_security_update_review_item`, `codex_security_record_scan_draft` |
 | `deep-security-scan` | The user wants an exhaustive or multi-pass audit with explicit worker and time budgets, especially when variants could hide from a single pass. | `codex_security_start_deep_scan`, `subagent`, `codex_security_record_candidate_validations`, `codex_security_complete_scan` |

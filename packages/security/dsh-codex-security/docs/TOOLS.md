@@ -1,6 +1,6 @@
 # Tool reference
 
-The plugin registers 31 host tools. Each accepts a JSON object and returns a JSON object; unknown arguments and values outside the declared schema are rejected.
+The plugin registers 33 host tools. Each accepts a JSON object and returns a JSON object. Unknown arguments and values outside the declared schema are rejected.
 
 Targets must be existing directories. Include paths are relative to the repository root for Git targets and to the target directory otherwise. A Git subdirectory target restricts the scope to that subdirectory.
 
@@ -9,6 +9,14 @@ Scan artifacts can be written only while a scan is running. Completion requires 
 Automatic Deep launches isolated workers and enforces concurrency, attempt, no-new and wall-clock limits. It requires a local DSH spawn provider and a working agent-preset registry. State must reside on trusted local storage with reliable SQLite locks. Comparison requires completed scans of the same target, mode and scope with non-deferred coverage.
 
 ## Tools
+
+### `codex_security_get_threat_model`
+
+Read the sealed threat model and its SHA-256 by `scanId`. The tool verifies the saved artifact against its manifest before returning content. A scan with no sealed model returns `threatModel: null`. The preview is limited to 1 MiB.
+
+### `codex_security_validate_patch_risk`
+
+Validate an `assessment` object against OpenAI's published patch-risk schema. Successful validation confirms structure. Review conclusions and repository merge permissions must be evaluated separately.
 
 ### `codex_security_inspect_setup`
 

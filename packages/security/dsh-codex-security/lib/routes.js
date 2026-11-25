@@ -94,12 +94,16 @@ export async function handleRequest(service, req, res) {
             sendJson(res, 200, await service.listFindings(query));
             return;
         }
-        const scanMatch = /^\/scans\/(cs_[a-f0-9]{24})(\/[a-z]+)?$/.exec(route);
+        const scanMatch = /^\/scans\/(cs_[a-f0-9]{24})(\/[a-z-]+)?$/.exec(route);
         if (scanMatch) {
             const scanId = scanMatch[1];
             const action = scanMatch[2];
             if (!action && method === 'GET') {
                 sendJson(res, 200, await service.getScan({ scanId }));
+                return;
+            }
+            if (action === '/threat-model' && method === 'GET') {
+                sendJson(res, 200, await service.getThreatModel({ scanId }));
                 return;
             }
             if (action === '/triage' && method === 'POST') {
@@ -126,16 +130,18 @@ export async function handleRequest(service, req, res) {
             return;
         }
         if (route === '/' && method === 'GET') {
-            sendJson(res, 200, { ok: true, name: 'codex-security', routes: ['/status', '/config', '/scans', '/scans/:id', '/findings', '/export/:id?format=sarif|json|csv|markdown', 'POST /scans/:id/triage', 'POST /scans/:id/remediation'] });
+            sendJson(res, 200, { ok: true, name: 'codex-security', routes: ['/status', '/config', '/scans', '/scans/:id', '/scans/:id/threat-model', '/findings', '/export/:id?format=sarif|json|csv|markdown', 'POST /scans/:id/triage', 'POST /scans/:id/remediation'] });
             return;
         }
         sendJson(res, 404, { ok: false, error: 'not found' });
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const status = /scan not found/.test(message) ? 404
-            : /managed scans can only be modified/.test(message) ? 403
-                : /required|must be|invalid|format|refusing|cross-site/.test(message) ? 400 : 500;
+        const status = /threat model integrity check failed/.test(message) ? 409
+            : /threat model preview exceeds/.test(message) ? 413
+                : /scan not found/.test(message) ? 404
+                    : /managed scans can only be modified/.test(message) ? 403
+                        : /required|must be|invalid|format|refusing|cross-site/.test(message) ? 400 : 500;
         sendJson(res, status, { ok: false, error: message });
     }
 }

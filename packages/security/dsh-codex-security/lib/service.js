@@ -8,7 +8,7 @@ import { FINDING_STATUSES, SEVERITIES } from './types.js';
 import { ScanStore, defaultStateDir } from './store.js';
 import { readEvidenceLine, readEvidenceLines, resolveTarget } from './target.js';
 import { assertArtifactContract } from './schema.js';
-import { canonicalProspectivePath, ensureDir, isWithin, joinWithin, newId, normalizeLine, nowIso, readFullText, readJson, renameFileAtomic, sanitizeRelative, sha256, truncate, writeFileAtomic, writeJsonAtomic } from './util.js';
+import { canonicalProspectivePath, ensureDir, isWithin, joinWithin, newId, normalizeLine, nowIso, readFullText, readJson, readText, renameFileAtomic, sanitizeRelative, sha256, truncate, writeFileAtomic, writeJsonAtomic } from './util.js';
 import { createExportValidator, writeSecureExport } from './secure-export.js';
 import { acquireStateLock } from './state-lock.js';
 import { WorkerRegistry } from './deep-worker.js';
@@ -1262,10 +1262,45 @@ export class SecurityService {
             reviewItems: { total: reviewItems.length, byStatus: this.countBy(reviewItems.map((item) => item.status)) },
         };
     }
+    async getThreatModel(args) {
+        const scanId = requiredStr(args, 'scanId');
+        const { record, dir } = await this.requireScan(scanId);
+        const empty = { ok: true, scanId, threatModel: null };
+        if (record.status !== 'completed')
+            return empty;
+        const manifest = await readJson(join(dir, 'scan-manifest.json'));
+        const artifacts = manifest?.scan?.artifacts;
+        const artifact = artifacts?.find(entry => entry.path === 'threat-model.md') ?? artifacts?.find(entry => entry.path === 'threatmodel.md');
+        if (!artifact)
+            return empty;
+        const path = join(dir, artifact.path);
+        const limit = 1024 * 1024;
+        const file = await lstat(path).catch(error => {
+            if (error.code !== 'ENOENT')
+                throw error;
+            return undefined;
+        });
+        if (!file?.isFile())
+            throw new Error('codex-security: threat model integrity check failed');
+        if (file.size > limit)
+            throw new Error('codex-security: threat model preview exceeds 1 MiB');
+        const content = await readText(path, limit);
+        if (content === undefined || sha256(content) !== artifact.sha256)
+            throw new Error('codex-security: threat model integrity check failed');
+        const model = manifest?.scan?.threatModel;
+        const threatModel = model && renderThreatModel(model) === content ? model : { format: 'markdown', content };
+        return { ok: true, scanId, path: artifact.path, sha256: artifact.sha256, threatModel };
+    }
     async findingsWithStatus(scanId) {
-        const findings = await this.store.readFindings(scanId);
-        const triage = await this.store.readTriage(scanId);
-        return findings.map((finding) => {
+        const { record, dir } = await this.requireScan(scanId);
+        if (record.status !== 'completed')
+            return [];
+        const [document, savedTriage] = await Promise.all([
+            readJson(join(dir, 'findings.json')),
+            readJson(join(dir, 'triage.json')),
+        ]);
+        const triage = savedTriage ?? {};
+        return (document?.findings ?? []).map((finding) => {
             const entry = triage[finding.findingId];
             return { ...finding, status: entry?.status ?? 'open', ...(entry ? { triage: entry } : {}) };
         });

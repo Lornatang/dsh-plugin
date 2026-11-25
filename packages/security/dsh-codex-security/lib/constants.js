@@ -4,7 +4,7 @@ export const PLUGIN_NAME = 'codex-security';
 export const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const ROUTE_PREFIX = '/plugins/codex-security';
 export const PRODUCER = { name: '@lornatang/dsh-codex-security', version: VERSION };
-export const SKILL_NAMES = ['security-scan', 'security-diff-scan', 'deep-security-scan', 'fix-finding', 'verify-fix', 'triage-finding', 'threat-model', 'track-findings', 'resolve-dependency-alert', 'vulnerability-writeup', 'assess-patch-risk', 'attack-path-analysis', 'define-security-policy', 'finding-discovery', 'propose-security-hardening', 'validation'];
+export const SKILL_NAMES = ['security-scan', 'security-diff-scan', 'deep-security-scan', 'fix-finding', 'verify-fix', 'triage-finding', 'threat-model', 'threat-model-visualize', 'check-skills', 'cloud-findings', 'publish-findings', 'track-findings', 'resolve-dependency-alert', 'vulnerability-writeup', 'assess-patch-risk', 'attack-path-analysis', 'define-security-policy', 'finding-discovery', 'propose-security-hardening', 'validation'];
 export const TOOL_NAMES = [
     'codex_security_inspect_setup', 'codex_security_inspect_target',
     'codex_security_start_scan', 'codex_security_start_standard_scan', 'codex_security_start_prompt_only_scan', 'codex_security_start_deep_scan', 'codex_security_resume_deep_scan', 'codex_security_get_deep_scan_status',
@@ -13,7 +13,7 @@ export const TOOL_NAMES = [
     'codex_security_record_candidate_validations', 'codex_security_record_candidate_attack_paths',
     'codex_security_save_artifact', 'codex_security_read_artifact',
     'codex_security_complete_scan', 'codex_security_fail_scan', 'codex_security_cancel_scan',
-    'codex_security_list_scans', 'codex_security_get_scan', 'codex_security_list_findings',
+    'codex_security_list_scans', 'codex_security_get_scan', 'codex_security_get_threat_model', 'codex_security_validate_patch_risk', 'codex_security_list_findings',
     'codex_security_set_finding_triage', 'codex_security_set_finding_remediation', 'codex_security_export_findings',
     'codex_security_prepare_review_items', 'codex_security_list_review_items', 'codex_security_update_review_item', 'codex_security_compare_scans',
 ];
