@@ -17,7 +17,12 @@ const parser = require('../vendor/caveman/src/hooks/caveman-parse.js') as {
   parseModeChange(prompt: string, options: { getDefaultMode: () => string }): ParsedChange | null
   INDEPENDENT_MODES: Set<string>
 }
-const modeConfig = require('../vendor/caveman/src/hooks/caveman-config.js') as { getDefaultMode(startDir?: string): string }
+const modeConfig = require('../vendor/caveman/src/hooks/caveman-config.js') as {
+  getDefaultMode(startDir?: string): string
+  getReinforce(startDir?: string): boolean
+}
+
+export const getReinforce = modeConfig.getReinforce
 
 /** A profile override wins; otherwise follow environment and file resolution. */
 export function defaultModeFor(configured: DefaultMode | undefined, cwd?: string): DefaultMode {
@@ -69,16 +74,25 @@ export function resolveMode(configured: DefaultMode, events: readonly InputEvent
 
 /** Incrementally replay immutable session logs; pending messages are never cached. */
 export class SessionModeTracker {
-  private readonly states = new WeakMap<Session, { seq: SessionLogOffset; configured: DefaultMode; mode: VoiceMode }>()
+  private readonly states = new WeakMap<Session, {
+    seq: SessionLogOffset
+    configured: DefaultMode
+    mode: VoiceMode
+    hasRules: boolean
+  }>()
 
-  resolve(configured: DefaultMode, session: Session, pending: readonly InputMessage[]): { mode: VoiceMode; action: ModeAction } {
+  resolve(configured: DefaultMode, session: Session, pending: readonly InputMessage[]): { mode: VoiceMode; action: ModeAction; hasRules: boolean } {
     const end = session.seq
     const previous = this.states.get(session)
     const reusable = previous && previous.configured === configured && previous.seq <= end
     const initial: VoiceMode = reusable ? previous.mode : configured === 'manual' ? 'off' : configured
     const events = session.snapshotEvents(reusable ? previous.seq : undefined, end)
     const mode = replay(initial, configured, events)
-    this.states.set(session, { seq: end, configured, mode })
-    return resolvePending(mode, configured, pending)
+    const hasRules = (reusable && previous.hasRules) || events.some(event =>
+      event.type === 'user/message' && event.data.source.kind === 'dsh-caveman-mode' &&
+      event.data.content.some(block => block.type === 'text' && /^Caveman mode: (?:caveman|ultracave|megacave)\n\n/u.test(block.text)),
+    )
+    this.states.set(session, { seq: end, configured, mode, hasRules })
+    return { ...resolvePending(mode, configured, pending), hasRules }
   }
 }

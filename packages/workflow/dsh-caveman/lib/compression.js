@@ -36,7 +36,7 @@ function textBlocks(event) {
     return event.data.message.content.flatMap((block, index) => block.type === 'text' ? [{ index, text: block.text }] : []);
 }
 export function isManagedTool(name) {
-    return name === 'caveman_retrieve' || name === 'cavemem_recover' || name.startsWith('mcp__caveman__') || name.startsWith('mcp__caveman_browse__') || name.startsWith('mcp__cavemem__') ||
+    return name === 'caveman_retrieve' || name === 'cavemem_recover' || name.startsWith('mcp__caveman__') || name.startsWith('mcp__caveman_browse__') || name.startsWith('mcp__caveman_codemode__') || name.startsWith('mcp__cavemem__') ||
         /^mcp__.+__(?:caveman_retrieve|browser_recover)$/u.test(name);
 }
 const MAX_ORIGINAL_ENTRIES = 64;

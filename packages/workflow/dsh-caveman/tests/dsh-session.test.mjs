@@ -68,6 +68,37 @@ test('a real DSH agent receives mode rules and stop leaves another session untou
   }
 })
 
+test('disabling reinforcement keeps the initial and changed rules but omits later reminders', async (t) => {
+  const previous = process.env.CAVEMAN_REINFORCE
+  process.env.CAVEMAN_REINFORCE = '0'
+  t.after(() => {
+    if (previous === undefined) delete process.env.CAVEMAN_REINFORCE
+    else process.env.CAVEMAN_REINFORCE = previous
+  })
+  const ctx = new Context()
+  t.after(() => ctx.fiber.dispose())
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(plugin, { defaultMode: 'caveman', inputCompression: false })
+  ctx.llm.registerAdapter(['mock'], new LocalAdapter())
+  const agent = await ctx.agentLoop.create('reinforcement', { provider: 'mock', model: 'mock' })
+  await send(agent, 'first turn')
+  await send(agent, 'second turn')
+  await send(agent, '/ultracave')
+  await send(agent, 'continue')
+  const modes = agent.session.snapshotEvents()
+    .filter(event => event.type === 'user/message' && event.data.source.kind === 'dsh-caveman-mode')
+    .map(event => event.data.source.mode)
+  assert.deepEqual(modes, ['caveman', 'ultracave'])
+})
+
 test('the stats command reports only recorded usage from its own DSH session', async () => {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)

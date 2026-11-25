@@ -15,6 +15,7 @@ interface InputEvent {
     readonly type: string;
     readonly data: unknown;
 }
+export declare const getReinforce: (startDir?: string) => boolean;
 /** A profile override wins; otherwise follow environment and file resolution. */
 export declare function defaultModeFor(configured: DefaultMode | undefined, cwd?: string): DefaultMode;
 /** Replay only user-authored messages, then evaluate the incoming batch. */
@@ -28,6 +29,7 @@ export declare class SessionModeTracker {
     resolve(configured: DefaultMode, session: Session, pending: readonly InputMessage[]): {
         mode: VoiceMode;
         action: ModeAction;
+        hasRules: boolean;
     };
 }
 export {};

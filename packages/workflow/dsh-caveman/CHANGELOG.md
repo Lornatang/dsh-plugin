@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.12 - 2026-11-25
+
+- Sync the upstream Caveman source, CLI and tested runtime binaries to 4.2.0 while retaining DSH session analysis.
+- Add opt-in Code-Mode to DSH through the official Caveman MCP gateway.
+- Honor the upstream reinforcement setting while supplying the initial and changed mode rules.
+
 ## 0.1.11 - 2026-11-23
 
 - Keep native events local to DSH on Windows and enforce resource limits on crew operations.

@@ -36,6 +36,7 @@ type Tool struct {
 	Name        string
 	Description string
 	InputSchema map[string]any
+	Annotations map[string]any
 	Meta        map[string]any
 	Handler     Handler
 	// ExemptResultCap declares that this tool returns the exact original bytes,
@@ -43,7 +44,7 @@ type Tool struct {
 	// paths (caveman_retrieve) set it, because the CCR store is shared with a
 	// gateway that has no matching ceiling, so an original can legitimately
 	// exceed the cap and failing it closed would make elided content
-	// unrecoverable (root CLAUDE.md rule #2: recovery returns the original unchanged).
+	// unrecoverable (docs/WHY.md ruling 6: recovery returns the original unchanged).
 	ExemptResultCap bool
 }
 
@@ -371,6 +372,9 @@ func (s *Server) toolDefinitions() []map[string]any {
 			"name":        t.Name,
 			"description": t.Description,
 			"inputSchema": t.InputSchema,
+		}
+		if len(t.Annotations) > 0 {
+			definition["annotations"] = t.Annotations
 		}
 		if len(t.Meta) > 0 {
 			definition["_meta"] = t.Meta

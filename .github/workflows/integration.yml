@@ -143,20 +143,20 @@ jobs:
           CGO_ENABLED=0 go build -o "$RUNNER_TEMP/dsh-caveman-learn" ./proxy/cmd/caveman-proxy
       - name: Fetch runtime binaries
         run: |
-          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-proxy_linux_amd64 -o "$RUNNER_TEMP/caveman-proxy"
-          echo "393b4e9b58f52eddcf77a24d32fd98aa0be011f8cff77498cf7ef55d9901195c  $RUNNER_TEMP/caveman-proxy" | sha256sum -c -
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.2.0/caveman-proxy_linux_amd64 -o "$RUNNER_TEMP/caveman-proxy"
+          echo "15674af7d23e53a2caa994dfe02108b8cde81f901035b450f713bb7c5c1a6d9f  $RUNNER_TEMP/caveman-proxy" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/caveman-proxy"
-          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-blocks_linux_amd64 -o "$RUNNER_TEMP/caveman-blocks"
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.2.0/caveman-blocks_linux_amd64 -o "$RUNNER_TEMP/caveman-blocks"
           echo "edb917309d776e5b12aa009334049da1ca8ea4de33679490df284e6f7682a006  $RUNNER_TEMP/caveman-blocks" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/caveman-blocks"
-          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-browse_linux_amd64 -o "$RUNNER_TEMP/caveman-browse"
-          echo "ef3f72384536a65589badd15ba3f8b2f901c4d48af99eac80c4d1c7569729dd9  $RUNNER_TEMP/caveman-browse" | sha256sum -c -
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.2.0/caveman-browse_linux_amd64 -o "$RUNNER_TEMP/caveman-browse"
+          echo "42a7782779b33bf05eb0be8c9389c4d507f349ae6d6ed4b63b0eed8016723d20  $RUNNER_TEMP/caveman-browse" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/caveman-browse"
-          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/caveman-mcp_linux_amd64 -o "$RUNNER_TEMP/caveman-mcp"
-          echo "23334424cf813117c497d49e1410d4b02f033db0a5f12ff8859e9bb62317f3cf  $RUNNER_TEMP/caveman-mcp" | sha256sum -c -
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.2.0/caveman-mcp_linux_amd64 -o "$RUNNER_TEMP/caveman-mcp"
+          echo "2579992faa94f2c68f91a5b544ad99faa77d87b1ca87b3e6bc634caa21fb8d73  $RUNNER_TEMP/caveman-mcp" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/caveman-mcp"
-          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.1.0/cavemem_linux_amd64 -o "$RUNNER_TEMP/cavemem"
-          echo "ef11cb6d070a2217853330df19a842a2a94cb712bc2ae1a2fb1137e292e2653b  $RUNNER_TEMP/cavemem" | sha256sum -c -
+          curl -fL --retry 3 https://github.com/JuliusBrussee/caveman/releases/download/bin-v4.2.0/cavemem_linux_amd64 -o "$RUNNER_TEMP/cavemem"
+          echo "3c5eaf897fa01d35d54d56175cc1bebe817814571f6d3caeec796db10f37c607  $RUNNER_TEMP/cavemem" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/cavemem"
       - run: node --test tests/auto.integration.test.mjs tests/cli.integration.test.mjs tests/compression.integration.test.mjs tests/blocks.integration.test.mjs tests/browse.integration.test.mjs tests/mcp.integration.test.mjs tests/memory.integration.test.mjs tests/native.integration.test.mjs tests/learn.integration.test.mjs
         env:

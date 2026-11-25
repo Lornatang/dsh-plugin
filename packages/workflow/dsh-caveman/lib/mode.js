@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const parser = require('../vendor/caveman/src/hooks/caveman-parse.js');
 const modeConfig = require('../vendor/caveman/src/hooks/caveman-config.js');
+export const getReinforce = modeConfig.getReinforce;
 /** A profile override wins; otherwise follow environment and file resolution. */
 export function defaultModeFor(configured, cwd) {
     if (configured !== undefined)
@@ -65,7 +66,9 @@ export class SessionModeTracker {
         const initial = reusable ? previous.mode : configured === 'manual' ? 'off' : configured;
         const events = session.snapshotEvents(reusable ? previous.seq : undefined, end);
         const mode = replay(initial, configured, events);
-        this.states.set(session, { seq: end, configured, mode });
-        return resolvePending(mode, configured, pending);
+        const hasRules = (reusable && previous.hasRules) || events.some(event => event.type === 'user/message' && event.data.source.kind === 'dsh-caveman-mode' &&
+            event.data.content.some(block => block.type === 'text' && /^Caveman mode: (?:caveman|ultracave|megacave)\n\n/u.test(block.text)));
+        this.states.set(session, { seq: end, configured, mode, hasRules });
+        return { ...resolvePending(mode, configured, pending), hasRules };
     }
 }

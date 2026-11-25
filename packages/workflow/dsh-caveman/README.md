@@ -84,12 +84,15 @@ The bundle supplies a `caveman` row. Override only the fields you want to change
 | `browseBinary` | auto-detected | Override the absolute path to `caveman-browse`; requires the DSH MCP manager. |
 | `mcpBinary` | auto-detected | Override the absolute path to `caveman-mcp`; requires the DSH MCP manager. |
 | `memoryBinary` | auto-detected | Override the absolute path to `cavemem`; enables its local memory tools. |
+| `codeMode` | `false` | Enable the Caveman 4.2.0 Code-Mode MCP gateway with an explicit configuration file and workspace. |
 
 ### Voice and usage
 
 Use `/caveman`, `/ultracave`, `/megacave`, `/caveman ultra`, `/caveman wenyan`, `/caveman status`, or `stop caveman`. Mode changes belong to the current session. All 22 Caveman skills are available for explicit invocation; the model can also invoke the skills whose metadata permits it.
 
 `defaultMode` accepts `caveman`, `ultracave`, `megacave`, `manual`, or `off`. An explicit profile value wins; otherwise the resolver checks `CAVEMAN_DEFAULT_MODE`, project configuration, and user configuration before falling back to `caveman`.
+
+Set `CAVEMAN_REINFORCE=0` or `"reinforce": false` in Caveman configuration to skip per-turn voice reminders. The initial rules and mode switches still reach the model.
 
 The native coding policy is included in the system prompt when the output module and Core are active. When the local runtime is running, it also supplies task-specific rules, maintains state across compaction, and can suggest reusing a verified unchanged file observation. Recovery references are shown only when the recovery MCP tool is available. `CAVEMAN_CORE=off`, record mode, or the `record-only` native profile disables the active rules; restart DSH after changing these settings. The `core-lean-build` profile adds the lean-build policy.
 
@@ -135,6 +138,18 @@ When Auto is selected and routing is enabled, the proxy sends the latest and pre
 For Anthropic API traffic, merge [examples/caveman-anthropic.patch.yml](examples/caveman-anthropic.patch.yml) into the provider map and choose an available model. The local proxy can then apply its cache-warming policy when the request and provider cache are eligible; warm requests are recorded as usage.
 
 ### MCP, Blocks and Browse
+
+To enable Code-Mode, install the Caveman 4.2.0 or newer runtime and add this to the DSH profile patch:
+
+```yaml
+- id: caveman
+  config:
+    codeMode:
+      config: /absolute/path/to/servers.json
+      workspace: /absolute/path/to/workspace
+```
+
+The JSON file uses the upstream `mcpServers` format. Use `{"mcpServers":{}}` for the gateway's built-in tools only. DSH exposes the gateway as `mcp__caveman_codemode__*`. The gateway loads the explicitly configured MCP servers and keeps execution and mutation tools separate.
 
 When `caveman-mcp` is installed, the DSH MCP manager exposes the `mcp__caveman__*` tools `caveman_compress`, `caveman_retrieve`, `caveman_stats`, `caveman_toon_encode`, and `caveman_toon_decode`. The server uses the local Caveman recovery store for its handles. Set `CAVEMAN_MCP=off` to disable automatic registration.
 

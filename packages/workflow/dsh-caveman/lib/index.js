@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import z from '@deepseek-ai/schemastery';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { createSkillProvider } from './skills.js';
-import { defaultModeFor, SessionModeTracker } from './mode.js';
+import { defaultModeFor, getReinforce, SessionModeTracker } from './mode.js';
 import { registerCompression } from './compression.js';
 import { registerBlocks } from './blocks.js';
 import { statsReport } from './stats.js';
@@ -23,6 +24,7 @@ export const Config = z.object({
     browseBinary: z.string().min(1),
     mcpBinary: z.string().min(1),
     memoryBinary: z.string().min(1),
+    codeMode: z.union([z.const(false), z.object({ config: z.string().required(), workspace: z.string().required() })]).default(false),
 });
 /** Register skills and reinforce the selected mode per session. */
 export function apply(ctx, config = {}) {
@@ -64,6 +66,18 @@ export function apply(ctx, config = {}) {
         ctx.inject(['subprocess', 'workingDirectory'], scoped => registerMemoryRecovery(scoped, memory));
     const servers = [{ name: 'caveman', binary: mcp, args: [] }, { name: 'caveman_browse', binary: browse, args: [] }, { name: 'cavemem', binary: memory, args: ['mcp'] }]
         .filter((server) => server.binary !== undefined);
+    if (settings.mcp && config.codeMode) {
+        if (!mcp)
+            throw new Error('dsh-caveman: Code-Mode requires the Caveman 4.2.0 or newer MCP binary');
+        const { config: serversFile, workspace } = config.codeMode;
+        if (!isAbsolute(serversFile) || !statSync(serversFile, { throwIfNoEntry: false })?.isFile()) {
+            throw new Error('dsh-caveman: codeMode.config must be an absolute path to an MCP configuration file');
+        }
+        if (!isAbsolute(workspace) || !statSync(workspace, { throwIfNoEntry: false })?.isDirectory()) {
+            throw new Error('dsh-caveman: codeMode.workspace must be an absolute path to a directory');
+        }
+        servers.push({ name: 'caveman_codemode', binary: mcp, args: ['codemode', '--config', serversFile, '--workspace', workspace] });
+    }
     if (servers.length) {
         ctx.inject(['mcpManager'], scoped => {
             for (const server of servers) {
@@ -100,6 +114,8 @@ export function apply(ctx, config = {}) {
         const cwd = directory ? await directory.ensure(agent, signal) : agent.session.header.cwd;
         const selected = modes.resolve(defaultModeFor(config.defaultMode, cwd), agent.session, directMessages);
         if (selected.action === 'one-shot' || (selected.mode === 'off' && selected.action === 'none'))
+            return decision;
+        if (selected.action === 'none' && selected.hasRules && !getReinforce(cwd))
             return decision;
         let text;
         if (selected.action === 'status') {

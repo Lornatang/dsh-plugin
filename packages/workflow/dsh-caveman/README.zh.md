@@ -84,12 +84,15 @@ bundle 自带 `caveman` 行。在 profile 的 `cordis.patch.yml` 中添加覆盖
 | `browseBinary` | 自动查找 | 覆盖 `caveman-browse` 的绝对路径；需要 DSH MCP manager。 |
 | `mcpBinary` | 自动查找 | 覆盖 `caveman-mcp` 的绝对路径；需要 DSH MCP manager。 |
 | `memoryBinary` | 自动发现 | 覆盖 `cavemem` 的绝对路径；启用本地记忆工具。 |
+| `codeMode` | `false` | 使用指定的配置文件和工作区启用 Caveman 4.2.0 的 Code-Mode MCP 网关。 |
 
 ### 回答模式与用量
 
 可使用 `/caveman`、`/ultracave`、`/megacave`、`/caveman ultra`、`/caveman wenyan`、`/caveman status` 和 `stop caveman`。模式切换只影响当前会话。22 个 Caveman 技能均可由用户显式调用，元数据允许的技能也可由模型调用。
 
 `defaultMode` 可设为 `caveman`、`ultracave`、`megacave`、`manual` 或 `off`。profile 的显式配置优先；否则依次检查 `CAVEMAN_DEFAULT_MODE`、项目配置和用户配置，均未设置时使用 `caveman`。
+
+设置 `CAVEMAN_REINFORCE=0`，或在 Caveman 配置中设置 `"reinforce": false`，可关闭每轮风格提醒。首次规则和切换模式时的规则仍会传给模型。
 
 output 模块和 Core 启用时，原生编码规则会加入系统提示词。本地运行时启动后，还会提供任务规则、衔接压缩前后的状态，并在文件确定未变化时提示复用已有观察；只有恢复 MCP 工具可用时才会展示恢复引用。设置 `CAVEMAN_CORE=off`、使用 record 模式或 `record-only` 原生 profile 可关闭活动规则；更改后重启 DSH。`core-lean-build` profile 会额外加入 lean-build 规则。
 
@@ -135,6 +138,18 @@ npx @lornatang/dsh-caveman start
 Anthropic API 请求可将 [examples/caveman-anthropic.patch.yml](examples/caveman-anthropic.patch.yml) 合并到 provider map，并选择账号可用的模型。请求与提供方缓存符合条件时，本地代理会按其策略预热缓存；预热请求计入用量。
 
 ### MCP、Blocks 和 Browse
+
+安装 Caveman 4.2.0 或更新的运行组件后，可在 DSH profile patch 中启用 Code-Mode：
+
+```yaml
+- id: caveman
+  config:
+    codeMode:
+      config: /absolute/path/to/servers.json
+      workspace: /absolute/path/to/workspace
+```
+
+配置文件使用上游 `mcpServers` JSON 格式。填写 `{"mcpServers":{}}` 时只使用网关内置工具。DSH 以 `mcp__caveman_codemode__*` 注册网关，网关加载显式配置的 MCP 服务，并将只读执行与修改操作分配给不同工具。
 
 安装 `caveman-mcp` 后，DSH MCP manager 会提供 `mcp__caveman__*` 工具：`caveman_compress`、`caveman_retrieve`、`caveman_stats`、`caveman_toon_encode` 和 `caveman_toon_decode`。服务使用本地 Caveman 恢复存储保存句柄。设置 `CAVEMAN_MCP=off` 可关闭自动注册。
 

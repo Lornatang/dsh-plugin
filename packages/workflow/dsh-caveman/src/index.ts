@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -8,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-mcp-manager'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { createSkillProvider } from './skills.js'
-import { defaultModeFor, SessionModeTracker, type DefaultMode, type VoiceMode } from './mode.js'
+import { defaultModeFor, getReinforce, SessionModeTracker, type DefaultMode, type VoiceMode } from './mode.js'
 import { registerCompression } from './compression.js'
 import { registerBlocks } from './blocks.js'
 import { statsReport } from './stats.js'
@@ -27,7 +28,16 @@ declare module '@deepseek-ai/dsh-llm' {
 export const name = 'caveman'
 export const inject = ['skills', 'tools', 'systemPrompt', 'llm']
 
-export interface Config { defaultMode?: DefaultMode; inputCompression?: boolean; middlewareEndpoint?: string; blocksBinary?: string; browseBinary?: string; mcpBinary?: string; memoryBinary?: string }
+export interface Config {
+  defaultMode?: DefaultMode
+  inputCompression?: boolean
+  middlewareEndpoint?: string
+  blocksBinary?: string
+  browseBinary?: string
+  mcpBinary?: string
+  memoryBinary?: string
+  codeMode?: false | { config: string; workspace: string }
+}
 export const Config: z<Config> = z.object({
   defaultMode: z.union([
     z.const('caveman'), z.const('ultracave'), z.const('megacave'), z.const('off'), z.const('manual'),
@@ -38,6 +48,7 @@ export const Config: z<Config> = z.object({
   browseBinary: z.string().min(1),
   mcpBinary: z.string().min(1),
   memoryBinary: z.string().min(1),
+  codeMode: z.union([z.const(false), z.object({ config: z.string().required(), workspace: z.string().required() })]).default(false),
 })
 
 /** Register skills and reinforce the selected mode per session. */
@@ -78,6 +89,17 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (memory) ctx.inject(['subprocess', 'workingDirectory'], scoped => registerMemoryRecovery(scoped, memory))
   const servers = [{ name: 'caveman', binary: mcp, args: [] }, { name: 'caveman_browse', binary: browse, args: [] }, { name: 'cavemem', binary: memory, args: ['mcp'] }]
     .filter((server): server is { name: string; binary: string; args: string[] } => server.binary !== undefined)
+  if (settings.mcp && config.codeMode) {
+    if (!mcp) throw new Error('dsh-caveman: Code-Mode requires the Caveman 4.2.0 or newer MCP binary')
+    const { config: serversFile, workspace } = config.codeMode
+    if (!isAbsolute(serversFile) || !statSync(serversFile, { throwIfNoEntry: false })?.isFile()) {
+      throw new Error('dsh-caveman: codeMode.config must be an absolute path to an MCP configuration file')
+    }
+    if (!isAbsolute(workspace) || !statSync(workspace, { throwIfNoEntry: false })?.isDirectory()) {
+      throw new Error('dsh-caveman: codeMode.workspace must be an absolute path to a directory')
+    }
+    servers.push({ name: 'caveman_codemode', binary: mcp, args: ['codemode', '--config', serversFile, '--workspace', workspace] })
+  }
   if (servers.length) {
     ctx.inject(['mcpManager'], scoped => {
       for (const server of servers) {
@@ -111,6 +133,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const cwd = directory ? await directory.ensure(agent, signal) : agent.session.header.cwd
     const selected = modes.resolve(defaultModeFor(config.defaultMode, cwd), agent.session, directMessages)
     if (selected.action === 'one-shot' || (selected.mode === 'off' && selected.action === 'none')) return decision
+    if (selected.action === 'none' && selected.hasRules && !getReinforce(cwd)) return decision
     let text: string
     if (selected.action === 'status') {
       text = `Report this status without changing it: Caveman mode: ${selected.mode}`
