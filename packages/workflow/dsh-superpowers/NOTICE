@@ -1,0 +1,8 @@
+The vendor/superpowers directory contains Superpowers v7.0.2 by Jesse Vincent
+and contributors, licensed under the MIT License. See vendor/superpowers/LICENSE.
+
+Upstream: https://github.com/obra/superpowers
+Commit: 22f0b463e7a5e579904dd6211a520321035526f7
+
+The Superpowers skill files and included upstream manifest are unmodified.
+The DSH bundle, provider, and prompt adapter are part of @lornatang/dsh-superpowers.

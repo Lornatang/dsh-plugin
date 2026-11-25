@@ -1,0 +1,70 @@
+{
+  "name": "@lornatang/dsh-superpowers",
+  "version": "0.1.0",
+  "description": "Superpowers engineering skills and session bootstrap for DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Lornatang",
+  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "superpowers", "skills"],
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.3-alpha.2 <0.3.0"
+  },
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "vendor/superpowers/LICENSE",
+    "vendor/superpowers/package.json",
+    "vendor/superpowers/skills",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "NOTICE"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "~4.2.0-alpha.1",
+    "@deepseek-ai/dsh-agent": "0.2.3-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.3-alpha.2",
+    "@deepseek-ai/dsh-skill": "0.2.3-alpha.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.3-alpha.2",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lornatang/dsh-plugin.git",
+    "directory": "packages/workflow/dsh-superpowers"
+  },
+  "homepage": "https://github.com/Lornatang/dsh-plugin/tree/main/packages/workflow/dsh-superpowers#readme",
+  "bugs": {
+    "url": "https://github.com/Lornatang/dsh-plugin/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -1,6 +1,6 @@
 # DeepSeek Harness plugins
 
-This repository contains seven independently installable DeepSeek Harness bundles.
+This repository contains independently installable DeepSeek Harness bundles.
 Install a bundle with `dsh plugin --profile web add <package>` and restart that
 profile.
 
@@ -13,6 +13,7 @@ profile.
 | [Codex Security](packages/security/dsh-codex-security) | `@lornatang/dsh-codex-security` |
 | [Security Audit](packages/security/dsh-security-audit) | `@lornatang/dsh-security-audit` |
 | [Caveman](packages/workflow/dsh-caveman) | `@lornatang/dsh-caveman` |
+| [Superpowers](packages/workflow/dsh-superpowers) | `@lornatang/dsh-superpowers` |
 
 ## Develop a plugin
 
