@@ -1,29 +1,29 @@
 {
-  "version": "0.1.12",
+  "version": "0.1.13",
   "binaries": {
     "linux-x64": {
       "name": "dsh-caveman-learn_linux_amd64",
-      "sha256": "4f73e771ac59e218ac7ec5f3648e79e472d565e5f3621755b5a1cf28b18bb0e1"
+      "sha256": "030472af90cfe270db5eca21de8ae3774dde68374cf7e7302cd3946e321d2174"
     },
     "linux-arm64": {
       "name": "dsh-caveman-learn_linux_arm64",
-      "sha256": "c29a8cc49fff51b23352e687bb3974398ee6d2835b84fd31e290c9e3f0852f22"
+      "sha256": "fb5aeef95e1a170879154d0ed613f9a1626d52e9239db3babe2150562defbed7"
     },
     "darwin-x64": {
       "name": "dsh-caveman-learn_darwin_amd64",
-      "sha256": "e460f3fe253eb76b85064e857f748dcb718d96ec59ea93a31d90d540e7326175"
+      "sha256": "300ee7c738dddba8ac924ac49b7df9b35f277553a359334db792c2aca4c74be2"
     },
     "darwin-arm64": {
       "name": "dsh-caveman-learn_darwin_arm64",
-      "sha256": "c8f21233f3f4a66322ee961a4f75aa03315e65b17ba3f9b4ae44fffe19805131"
+      "sha256": "704f0c3eaf6d9c7aac0b2d60f963589f9dfde2b244ba37e5a8fb516e99b5896c"
     },
     "win32-x64": {
       "name": "dsh-caveman-learn_win32_amd64",
-      "sha256": "e5ea9938bedbdf3fd4dbae9717da2d643a4acb3802cdfcb116b878ea47e885b1"
+      "sha256": "2c5849cb55f354f1a21989f08567358921d1cf1960c9c330d187ce42a9b02843"
     },
     "win32-arm64": {
       "name": "dsh-caveman-learn_win32_arm64",
-      "sha256": "c5d43c0dcf011490a1fe6aaf1239a9d90f959949ce34be9f971933c073b3c64d"
+      "sha256": "303091eea771dc9dc1d09c3cbf5e65d3ceb1d7d0098e8781b82b91a216c6da16"
     }
   }
 }
