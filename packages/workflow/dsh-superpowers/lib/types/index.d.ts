@@ -1,5 +1,4 @@
 import type { Context } from '@deepseek-ai/cordis';
 export declare const name = "superpowers";
 export declare const inject: string[];
-/** Install the upstream skills and keep the SessionStart guidance in the controller's prompt. */
 export declare function apply(ctx: Context): void;

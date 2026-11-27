@@ -10,7 +10,6 @@ const platform = `### DeepSeek Harness tool mapping
 - For diagnostics, use DSH session tools and the configured profile's session storage to identify the requested transcript. Follow the upstream redaction and user-review workflow before sharing any diagnostics.
 
 Apply these mappings wherever a skill refers to another harness's tools. Follow the active profile's permissions and the user's instructions.`;
-/** Install the upstream skills and keep the SessionStart guidance in the controller's prompt. */
 export function apply(ctx) {
     const root = fileURLToPath(new URL('../vendor/superpowers/skills/', import.meta.url));
     const bundle = loadSkills(root);

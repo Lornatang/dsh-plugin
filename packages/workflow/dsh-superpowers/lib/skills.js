@@ -14,16 +14,12 @@ export function loadSkills(root) {
         const path = join(directory, 'SKILL.md');
         const markdown = readFileSync(path, 'utf8');
         const header = frontmatter.exec(markdown);
-        const metadata = header?.[1] && parse(header[1]);
+        const metadata = header?.[1] ? parse(header[1]) : null;
         if (!header || typeof metadata !== 'object' || metadata === null ||
-            !('name' in metadata) || metadata.name !== entry.name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(entry.name) ||
-            !('description' in metadata) || typeof metadata.description !== 'string' || !metadata.description.trim()) {
+            metadata.name !== entry.name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(entry.name) ||
+            typeof metadata.description !== 'string' || !metadata.description.trim()) {
             throw new Error(`dsh-superpowers: invalid skill metadata in ${path}`);
         }
-        const invocation = {
-            modelInvocable: !('disable-model-invocation' in metadata) || metadata['disable-model-invocation'] !== true,
-            userInvocable: !('user-invocable' in metadata) || metadata['user-invocable'] !== false,
-        };
         const definition = {
             name: entry.name,
             description: metadata.description.trim().replace(/\s+/gu, ' '),
@@ -31,7 +27,10 @@ export function loadSkills(root) {
             provider,
             source: 'bundled',
             resourceBase: { kind: 'directory', path: directory.split(sep).join('/') },
-            invocation,
+            invocation: {
+                modelInvocable: metadata['disable-model-invocation'] !== true,
+                userInvocable: metadata['user-invocable'] !== false,
+            },
             content: markdown.slice(header[0].length),
         };
         definitions.set(entry.name, definition);
@@ -48,7 +47,7 @@ export function loadSkills(root) {
             name: provider,
             async list({ signal }) {
                 signal?.throwIfAborted();
-                return { candidates, complete: true };
+                return candidates;
             },
             async get(candidate, { signal }) {
                 signal?.throwIfAborted();

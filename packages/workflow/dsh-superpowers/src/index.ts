@@ -17,7 +17,6 @@ const platform = `### DeepSeek Harness tool mapping
 
 Apply these mappings wherever a skill refers to another harness's tools. Follow the active profile's permissions and the user's instructions.`
 
-/** Install the upstream skills and keep the SessionStart guidance in the controller's prompt. */
 export function apply(ctx: Context): void {
   const root = fileURLToPath(new URL('../vendor/superpowers/skills/', import.meta.url))
   const bundle = loadSkills(root)
