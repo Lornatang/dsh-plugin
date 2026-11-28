@@ -92,7 +92,7 @@
     "@deepseek-ai/dsh-tool-executor-native": "*",
     "@deepseek-ai/dsh-tools": "*",
     "@types/node": "^26.6.6",
-    "@types/react": "^18.3.31",
+    "@types/react": "^19.3.1",
     "typescript": "^7.0.2"
   },
   "repository": {
